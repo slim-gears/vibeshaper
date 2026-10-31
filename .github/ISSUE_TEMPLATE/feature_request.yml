@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea for PromptCAD
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The task or problem, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could PromptCAD help?
+  - type: textarea
+    id: example
+    attributes:
+      label: An example prompt or part

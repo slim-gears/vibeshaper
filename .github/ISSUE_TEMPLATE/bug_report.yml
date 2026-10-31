@@ -1,0 +1,39 @@
+name: Bug report
+description: Something went wrong in PromptCAD
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you asked for, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: The prompt you used, and anything special about the open design.
+  - type: input
+    id: model
+    attributes:
+      label: Provider and model
+      placeholder: e.g. Ollama · qwen3:8b
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: PromptCAD version, Fusion version, operating system
+      placeholder: e.g. 0.2.0, Fusion 2.0.20000, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        The relevant part of promptcad.log (%APPDATA%\PromptCAD on Windows,
+        ~/Library/Application Support/PromptCAD on macOS). It contains your prompts and the
+        model's replies, so check it before pasting.
+      render: text

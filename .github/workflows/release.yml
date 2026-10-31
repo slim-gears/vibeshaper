@@ -1,0 +1,81 @@
+name: Build
+
+# Every push to main: a test build of the add-in, downloadable from the run's page (Artifacts).
+# A version tag (v0.2.0): the same build, published as a GitHub Release with the zip attached.
+# The version comes from git tags (.github/scripts/version.sh) and is written into the manifest
+# of the build; the manifest in the repository only holds a placeholder.
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to create releases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # all history and tags: the version is worked out from them
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Run the test suite
+        run: python test_dsl.py
+
+      - name: Work out the version
+        id: version
+        run: |
+          version=$(bash .github/scripts/version.sh)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$version" != "${GITHUB_REF_NAME#v}" ]]; then
+            echo "Tag $GITHUB_REF_NAME doesn't give a version (got $version)" >&2
+            exit 1
+          fi
+          echo "Version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build the add-in folder and zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p build dist
+          # Only committed files, minus those marked export-ignore in .gitattributes
+          git archive --format=tar --prefix=PromptCAD/ HEAD | tar -x -C build
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path('build/PromptCAD/PromptCAD.manifest')
+          m = json.loads(p.read_text(encoding='utf-8'))
+          m['version'] = os.environ['VERSION']
+          p.write_text(json.dumps(m, indent=2) + '\n', encoding='utf-8')
+          PY
+          (cd build && zip -qr "../dist/PromptCAD-$VERSION.zip" PromptCAD)
+          unzip -l "dist/PromptCAD-$VERSION.zip"
+
+      - name: Keep the build with this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: PromptCAD-${{ steps.version.outputs.version }}
+          path: build/  # downloads as a zip holding the PromptCAD folder
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Release notes: this version's section of CHANGELOG.md, if there is one
+          awk -v h="## [$VERSION]" '
+            index($0, h) == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on && /^\[[^]]*\]: http/ { next }
+            on { print }' CHANGELOG.md > notes.md || true
+          flags=()
+          [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
+          if [[ -s notes.md ]]; then flags+=(--notes-file notes.md); else flags+=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" "dist/PromptCAD-$VERSION.zip" \
+            --title "PromptCAD $VERSION" "${flags[@]}"

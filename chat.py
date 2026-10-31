@@ -246,6 +246,17 @@ class ChatStore:
         self.active_id = chat_id
         return self.get(chat_id)
 
+    def delete(self, chat_id):
+        """Remove a chat and everything it remembers. What it built stays in the design.
+        If it was the active chat, the newest remaining one becomes active."""
+        c = self.get(chat_id)
+        if not c:
+            raise ValueError(f'unknown chat {chat_id!r}')
+        self.chats.remove(c)
+        if self.active_id == chat_id:
+            rest = [x for x in self.chats if x.turns]
+            self.active_id = rest[-1].id if rest else None
+
     def summaries(self):
         return [{'id': c.id, 'title': c.title, 'versions': len(c.versions), 'created': c.created}
                 for c in self.chats if c.turns]

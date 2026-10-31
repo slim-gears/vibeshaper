@@ -205,6 +205,9 @@ for core_file, src in _core_src.items():
     for key in ('api_key', 'values.think', "values['think']", 'GEMINI', 'OLLAMA'):
         assert key not in src, f'{core_file} knows the provider setting {key!r}'
 
+# The version isn't written by hand: the build works it out from git tags and writes it into the manifest
+assert json.loads((_HERE / 'PromptCAD.manifest').read_text(encoding='utf-8'))['version'] == '0.0.0-dev'
+
 # Settings values are cleaned against the provider's own field list
 _schema = [SettingDef('url', 'URL', 'string', 'http://x', required=True, refreshes_models=True),
            SettingDef('key', 'Key', 'secret', ''),
@@ -1403,6 +1406,26 @@ view = lc.to_view()
 assert 'messages' not in view and not any(k.startswith('_') for t in view['turns'] for k in t)
 assert chat_mod.ChatStore.from_json('not json').chats == []
 assert chat_mod.make_title('{"name": "bottle_cap", "timeline": []}') == 'bottle cap'
+
+# Deleting a chat removes it from the saved data; the newest remaining chat becomes active
+ds = chat_mod.ChatStore.from_json(saved)
+keep = ds.new_chat()
+keep.add_user_turn('keep me')
+ds.switch(c.id)
+ds.delete(c.id)
+assert ds.get(c.id) is None and ds.active() is keep and c.id not in ds.to_json()
+other = ds.new_chat()
+other.add_user_turn('other')
+ds.switch(keep.id)
+ds.delete(other.id)  # deleting another chat leaves the active one alone
+assert ds.active() is keep
+ds.delete(keep.id)
+assert ds.active() is None and json.loads(ds.to_json())['chats'] == []
+try:
+    ds.delete('nope')
+    raise AssertionError('deleting an unknown chat should fail')
+except ValueError:
+    pass
 assert c.group_name(3).endswith(f'v3 [{c.id}]')
 
 # Build mode ("target") is remembered per chat; None means "use the default from Settings"
@@ -2114,5 +2137,29 @@ assert _c.messages[-2] == {'role': 'user', 'content': 'a bit wider'}  # not save
 e2e._design_summary = _real_summary
 assert e2e._design_summary(e2e.toolbox.get_all_toolkits()) == ''  # nothing to tell about the stub design
 e2e._models_cache.clear()
+
+
+# 17. Deleting a chat removes the conversation from the design but leaves its geometry alone
+_deleted_versions = []
+_real_delete_version = e2e.dsl.delete_version
+e2e.dsl.delete_version = lambda *a, **k: _deleted_versions.append(a)
+H.act('ready')
+_chats = H.panel[-1]['chats']
+assert len(_chats) >= 2
+_gone, _shown = _chats[0]['id'], H.chat_view()['id']
+e2e._job['active'] = True  # not while something is running
+H.act('delete_chat', id=_gone)
+e2e._job['active'] = False
+assert H.panel[-1]['type'] == 'toast' and e2e._store().get(_gone)
+H.act('delete_chat', id=_gone)
+H.pump(lambda: True)
+assert e2e._store().get(_gone) is None and _deleted_versions == []
+_last_chat = [e for e in H.panel if e.get('type') == 'chat'][-1]
+assert _gone not in [x['id'] for x in _last_chat['chats']]
+assert {'type': 'toast', 'text': 'Chat deleted'} in H.panel[-3:]
+assert _gone not in H.design.attributes.itemByName('PromptCAD', 'chats').value
+assert H.chat_view()['id'] == (_shown if _shown != _gone else e2e._store().active().id)
+H.act('delete_chat', id='no-such-chat')  # nothing happens
+e2e.dsl.delete_version = _real_delete_version
 
 print('ok')

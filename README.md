@@ -1,5 +1,9 @@
 # PromptCAD
 
+[![Tests](https://github.com/slim-gears/promptcad/actions/workflows/test.yml/badge.svg)](https://github.com/slim-gears/promptcad/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/slim-gears/promptcad?include_prereleases)](https://github.com/slim-gears/promptcad/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Prompt to 100% Parametric CAD History in Autodesk Fusion 360**
 
 PromptCAD is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (such as Google Gemini).
@@ -40,16 +44,19 @@ Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, Pro
   ~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
   ```
 
-### 2. Clone or Copy PromptCAD
+### 2. Download PromptCAD
 
-Clone this repository into the `AddIns` directory. The folder must be named `PromptCAD`:
+1. Download `PromptCAD-<version>.zip` from the [latest release](https://github.com/slim-gears/promptcad/releases/latest).
+2. Extract it into the `AddIns` folder. You should end up with `AddIns\PromptCAD\PromptCAD.py`.
+
+To update later, close Fusion, delete the old `PromptCAD` folder and extract the new one. Your settings and chats are kept: settings live in your user folder, and chats are saved in your designs.
+
+*Want the latest code instead?* Clone the repository into the `AddIns` folder; the folder must be named `PromptCAD`:
 
 ```bash
 cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns"
 git clone https://github.com/slim-gears/promptcad.git PromptCAD
 ```
-
-*(Or download the ZIP, extract it, and rename the folder to `PromptCAD`.)*
 
 ### 3. Run in Fusion 360
 
@@ -85,7 +92,9 @@ PromptCAD keeps your settings (including API keys) and its logs in your user fol
 | `promptcad.log` | A full record of each request and reply, handy for bug reports. Kept under 5 MB (one older copy is kept as `promptcad.log.old`). |
 | `last_response.txt` | The model's most recent raw reply. |
 
-**Privacy**: your prompts, the chat history and, for models that use tools, details of your open design are sent to the provider you pick. With Ollama, everything stays on your computer.
+**Privacy**:
+* Your prompts, the chat history and, for models that use tools, details of your open design are sent to the provider you pick. With Ollama, everything stays on your computer.
+* Chats are saved **inside the design**, so they travel with it: anyone you share the design or an exported `.f3d` with can read the whole conversation. Delete a chat from the title menu before sharing if you'd rather not. Earlier saved versions of the design in Fusion's version history still contain it. API keys are never stored in designs.
 
 ### Using Local Ollama (Recommended for Privacy)
 1. Install [Ollama](https://ollama.ai) and pull a coding/reasoning model:
@@ -123,6 +132,7 @@ PromptCAD keeps your settings (including API keys) and its logs in your user fol
 * **Edit JSON**: click **JSON** on the current version, edit it (`Ctrl+Enter` to build), and it becomes the next version. Older versions open read-only with **Restore**.
 * **Parameters**: expand **Parameters** above the message box and edit a value; Fusion updates immediately. The model is told about manual changes with your next message.
 * **Several parts**: **+** starts a new chat (a new part alongside the others); the title menu switches between chats in this design.
+* **Delete a chat**: in the title menu, point at a chat and click the trash icon. This removes the conversation and its versions from the design; the parts it built stay in your timeline as ordinary features.
 * **Your own features**: if you added features after a PromptCAD part, you're asked before it's replaced.
 * **Keys**: `Enter` send · `Shift+Enter` new line · `Esc` stop · `Ctrl+Shift+O` new chat.
 
@@ -239,6 +249,12 @@ python test_dsl.py
 ```
 
 The tests use a temporary folder for settings and logs, so they never touch yours. They verify DSL schema validation, parametric expression evaluation, geometric constraint inference, provider plug-ins, design tools, chat history and saving, and the full chat-panel flow (replace on rebuild, rollback on failure, self-healing, restore, JSON and parameter edits) against a simulated Fusion.
+
+---
+
+## 🤝 Contributing
+
+Bug reports, providers, tools and fixes are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up, run the tests and work on the panel, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ---
 

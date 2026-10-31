@@ -6,7 +6,7 @@
   "description": {
     "": "Build parametric design history from natural language prompts using pluggable AI providers"
   },
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "runOnStartup": false,
   "supportedOS": "windows|mac",
   "editEnabled": true

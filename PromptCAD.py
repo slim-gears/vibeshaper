@@ -923,6 +923,19 @@ def _act_switch_chat(data):
     _emit_chat(c)
 
 
+def _act_delete_chat(data):
+    if _busy():
+        return _toast('Wait for the current build, or stop it first')
+    store = _store()
+    if not store or not store.get(data.get('id')):
+        return
+    store.delete(data['id'])
+    c = store.ensure_active()
+    _save_store()
+    _emit_chat(c)
+    _toast('Chat deleted')
+
+
 def _provider_and_entry(prov_id):
     prov = providers.get_provider(prov_id) if prov_id else None
     if not prov:
@@ -1025,6 +1038,7 @@ ACTIONS = {
     'confirm_replace': _act_confirm_replace, 'apply_json': _act_apply_json,
     'restore_version': _act_restore_version, 'set_param': _act_set_param,
     'validate_json': _act_validate_json, 'new_chat': _act_new_chat, 'switch_chat': _act_switch_chat,
+    'delete_chat': _act_delete_chat,
     'get_models': _act_get_models, 'select_model': _act_select_model,
     'save_provider': _act_save_provider, 'set_model_option': _act_set_model_option,
     'save_general': _act_save_general, 'copy': _act_copy,

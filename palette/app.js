@@ -552,16 +552,47 @@
     if (first) first.focus({ preventScroll: true });
   }
 
+  let deletingChat = null;  // chat id waiting for "Delete?" to be confirmed
+
+  function chatRow(c) {
+    if (deletingChat === c.id) {
+      return h('div', { class: 'menu-confirm', role: 'group', 'aria-label': 'Delete chat' },
+        h('div', { class: 'q', text: `Delete “${c.title}”?` }),
+        h('div', { class: 'sub', text: 'Removes the conversation and its versions from this design. The parts it built stay in your timeline.' }),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn danger sm', onclick: () => { deletingChat = null; closePopover(); send('delete_chat', { id: c.id }); } }, 'Delete'),
+          h('button', { class: 'btn ghost sm', onclick: () => { deletingChat = null; renderChatMenu(); focusChatRow(c.id); } }, 'Cancel')));
+    }
+    return h('div', { class: 'menu-row', 'data-chat': c.id },
+      h('button', {
+        class: 'menu-item' + (S.chat && c.id === S.chat.id ? ' active' : ''), role: 'menuitem',
+        onclick: () => { closePopover(); send('switch_chat', { id: c.id }); },
+      }, h('span', { class: 't', text: c.title }), h('span', { class: 'meta', text: c.versions ? `v${c.versions}` : '—' })),
+      h('button', {
+        class: 'icon-btn row-del', title: 'Delete chat', 'aria-label': `Delete chat “${c.title}”`, disabled: S.busy,
+        onclick: (e) => {
+          e.stopPropagation();
+          const menu = $('chatMenu');
+          menu.style.width = menu.offsetWidth + 'px';  // the question shouldn't resize the menu
+          deletingChat = c.id;
+          renderChatMenu();
+          const btn = $('chatMenu').querySelector('.menu-confirm .btn.danger');
+          if (btn) btn.focus({ preventScroll: true });
+        },
+      }, icon('trash', 'i-sm')));
+  }
+
+  function focusChatRow(id) {
+    const b = $('chatMenu').querySelector(`.menu-row[data-chat="${CSS.escape(id)}"] .row-del`);
+    if (b) b.focus({ preventScroll: true });
+  }
+
   function renderChatMenu() {
     const menu = $('chatMenu');
     const items = S.chats.slice().reverse();
     menu.replaceChildren(...[
       h('div', { class: 'menu-label', text: 'Chats in this design' }),
-      ...(items.length ? items.map((c) => h('button', {
-        class: 'menu-item' + (S.chat && c.id === S.chat.id ? ' active' : ''), role: 'menuitem',
-        onclick: () => { closePopover(); send('switch_chat', { id: c.id }); },
-      }, h('span', { class: 't', text: c.title }), h('span', { class: 'meta', text: c.versions ? `v${c.versions}` : '—' })))
-        : [h('div', { class: 'menu-empty', text: 'No chats yet.' })]),
+      ...(items.length ? items.map(chatRow) : [h('div', { class: 'menu-empty', text: 'No chats yet.' })]),
       h('div', { class: 'menu-sep' }),
       h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { closePopover(); newChat(); } }, icon('plus', 'i-sm'), 'New chat')]);
   }
@@ -1031,7 +1062,7 @@
     });
     $('send').addEventListener('click', submit);
     $('newChat').addEventListener('click', newChat);
-    $('chatSwitch').addEventListener('click', () => togglePopover($('chatMenu'), $('chatSwitch'), 'left', renderChatMenu));
+    $('chatSwitch').addEventListener('click', () => togglePopover($('chatMenu'), $('chatSwitch'), 'left', () => { deletingChat = null; $('chatMenu').style.width = ''; renderChatMenu(); }));
     $('modelChip').addEventListener('click', openModelMenu);
     $('buildChip').addEventListener('click', openBuildMenu);
     $('openSettings').addEventListener('click', () => openSettings());
@@ -1298,6 +1329,18 @@
           pushChat();
         },
         switch_chat({ id }) { cur = chats.find((c) => c.id === id) || cur; pushChat(); },
+        delete_chat({ id }) {
+          if (busy) return;
+          const gone = chats.find((c) => c.id === id);
+          if (!gone) return;
+          chats = chats.filter((c) => c !== gone);
+          if (cur === gone) {
+            const rest = chats.filter((c) => c.turns.length);
+            if (rest.length) cur = rest[rest.length - 1]; else newChat();
+          }
+          pushChat();
+          emit({ type: 'toast', text: 'Chat deleted' });
+        },
         confirm_replace({ turn_id, choice }) {
           const t = cur.turns.find((x) => x.id === turn_id);
           if (choice === 'cancel') { t.status = 'stopped'; pushChat(); return; }

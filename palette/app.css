@@ -264,6 +264,9 @@ kbd {
 .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn.ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .btn.ghost:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
+.btn.sm { height: 26px; padding: 0 10px; }
+.btn.danger { background: var(--danger); color: var(--surface); }
+.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 85%, #000); }
 .btn.danger-ghost { border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); color: var(--danger); background: transparent; }
 
 /* ---------- Empty state ---------- */
@@ -360,6 +363,19 @@ kbd {
 .menu-item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-item.active { background: var(--accent-soft); }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+
+/* Chat rows: the delete button shows on hover or keyboard focus (always on touch screens) */
+.menu-row { display: flex; align-items: center; gap: 2px; border-radius: var(--radius-s); }
+.menu-row .menu-item { flex: 1; min-width: 0; }
+.menu-row .row-del { flex: none; width: 26px; height: 26px; opacity: 0; color: var(--text-3); }
+.menu-row:hover .row-del, .menu-row:focus-within .row-del { opacity: 1; }
+.menu-row .row-del:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+.menu-row .row-del:disabled { opacity: 0 !important; }
+@media (hover: none) { .menu-row .row-del { opacity: 1; } }
+.menu-confirm { padding: 8px; margin: 2px 0; border-radius: var(--radius-s); background: var(--danger-soft); }
+.menu-confirm .q { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-confirm .sub { margin-top: 2px; font-size: 12px; color: var(--text-2); }
+.menu-confirm .row { display: flex; gap: 6px; margin-top: 8px; }
 .menu-empty { padding: 8px; color: var(--text-3); font-size: 12px; }
 
 .seg { display: flex; padding: 2px; background: var(--surface-2); border-radius: var(--radius-s); gap: 2px; }
