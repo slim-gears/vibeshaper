@@ -6,6 +6,10 @@
 
 **Prompt to 100% Parametric CAD History in Autodesk Fusion 360**
 
+![PromptCAD building a flanged pipe elbow from a prompt in Fusion 360](docs/demo.gif)
+
+<sub>*"A 90-degree pipe elbow with 30mm outer diameter, 3mm wall, swept over an 80mm radius, with an 80mm round mounting flange with 6 bolt holes on a 60mm bolt circle."*</sub>
+
 PromptCAD is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (such as Google Gemini).
 
 Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, PromptCAD creates **real CAD features** in the Fusion 360 timeline: sketches, parametric dimensions, extrusions, revolves, sweeps, coils, fillets, chamfers, and user parameters you can edit anytime under `Modify > Change Parameters`.

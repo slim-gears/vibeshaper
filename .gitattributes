@@ -15,3 +15,5 @@ test_dsl.py export-ignore
 sample.json export-ignore
 settings.example.json export-ignore
 examples/ export-ignore
+docs/ export-ignore
+*.gif binary
