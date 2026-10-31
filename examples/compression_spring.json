@@ -1,0 +1,21 @@
+{
+  "name": "compression_spring",
+  "parameters": {
+    "spring_od": "24 mm",
+    "wire_dia": "3 mm",
+    "pitch": "8 mm",
+    "active_turns": "6"
+  },
+  "timeline": [
+    {
+      "op": "coil",
+      "id": "spring_body",
+      "diameter": "spring_od",
+      "section_size": "wire_dia",
+      "pitch": "pitch",
+      "revolutions": "active_turns",
+      "axis": "z",
+      "mode": "new_body"
+    }
+  ]
+}

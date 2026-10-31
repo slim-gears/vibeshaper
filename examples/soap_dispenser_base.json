@@ -1,0 +1,330 @@
+{
+  "name": "soap_dispenser_base",
+  "parameters": {
+    "body_r": "55 mm",
+    "neck_r": "27.5 mm",
+    "neck_dia": "55 mm",
+    "neck_h": "12 mm",
+    "rib_dia": "3.2 mm",
+    "rib_coil_dia": "108.6 mm",
+    "rib_start_z": "7 mm",
+    "rib_len": "72 mm",
+    "rib_twist_turns": "0.13",
+    "rib_qty": "48",
+    "neck_thread_dia": "2.4 mm",
+    "neck_thread_pitch": "4.0 mm",
+    "neck_thread_turns": "2.0"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "base_profile_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              "50 mm",
+              0
+            ],
+            [
+              "55 mm",
+              "5 mm"
+            ],
+            [
+              "55 mm",
+              "90 mm"
+            ],
+            [
+              "54.97 mm",
+              "91.36 mm"
+            ],
+            [
+              "54.87 mm",
+              "92.72 mm"
+            ],
+            [
+              "54.7 mm",
+              "94.07 mm"
+            ],
+            [
+              "54.47 mm",
+              "95.42 mm"
+            ],
+            [
+              "54.17 mm",
+              "96.75 mm"
+            ],
+            [
+              "53.8 mm",
+              "98.06 mm"
+            ],
+            [
+              "53.38 mm",
+              "99.35 mm"
+            ],
+            [
+              "52.89 mm",
+              "100.62 mm"
+            ],
+            [
+              "52.33 mm",
+              "101.87 mm"
+            ],
+            [
+              "51.72 mm",
+              "103.09 mm"
+            ],
+            [
+              "51.05 mm",
+              "104.27 mm"
+            ],
+            [
+              "50.32 mm",
+              "105.42 mm"
+            ],
+            [
+              "49.54 mm",
+              "106.54 mm"
+            ],
+            [
+              "48.7 mm",
+              "107.61 mm"
+            ],
+            [
+              "47.81 mm",
+              "108.64 mm"
+            ],
+            [
+              "46.87 mm",
+              "109.63 mm"
+            ],
+            [
+              "44.31 mm",
+              "112.19 mm"
+            ],
+            [
+              "41.75 mm",
+              "114.75 mm"
+            ],
+            [
+              "39.18 mm",
+              "117.31 mm"
+            ],
+            [
+              "36.62 mm",
+              "119.88 mm"
+            ],
+            [
+              "34.06 mm",
+              "122.44 mm"
+            ],
+            [
+              "31.5 mm",
+              "125.0 mm"
+            ],
+            [
+              "27.5 mm",
+              "125 mm"
+            ],
+            [
+              "27.5 mm",
+              "137 mm"
+            ],
+            [
+              "23.5 mm",
+              "137 mm"
+            ],
+            [
+              "23.5 mm",
+              "121.0 mm"
+            ],
+            [
+              "26.36 mm",
+              "119.06 mm"
+            ],
+            [
+              "28.99 mm",
+              "117.12 mm"
+            ],
+            [
+              "31.54 mm",
+              "115.19 mm"
+            ],
+            [
+              "34.05 mm",
+              "113.25 mm"
+            ],
+            [
+              "36.54 mm",
+              "111.31 mm"
+            ],
+            [
+              "38.99 mm",
+              "109.38 mm"
+            ],
+            [
+              "41.23 mm",
+              "107.44 mm"
+            ],
+            [
+              "43.15 mm",
+              "105.5 mm"
+            ],
+            [
+              "44.83 mm",
+              "103.56 mm"
+            ],
+            [
+              "46.29 mm",
+              "101.62 mm"
+            ],
+            [
+              "47.55 mm",
+              "99.69 mm"
+            ],
+            [
+              "48.65 mm",
+              "97.75 mm"
+            ],
+            [
+              "49.58 mm",
+              "95.81 mm"
+            ],
+            [
+              "50.37 mm",
+              "93.88 mm"
+            ],
+            [
+              "51.0 mm",
+              "91.94 mm"
+            ],
+            [
+              "51.5 mm",
+              "90.0 mm"
+            ],
+            [
+              "51.5 mm",
+              "9 mm"
+            ],
+            [
+              "47 mm",
+              "4 mm"
+            ],
+            [
+              0,
+              "4 mm"
+            ]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "revolve",
+      "id": "base_body",
+      "sketch": "base_profile_sk",
+      "axis": "z",
+      "angle": "360 deg",
+      "mode": "new_body"
+    },
+    {
+      "op": "coil",
+      "id": "rib_coil",
+      "axis": "z",
+      "center": [
+        0,
+        0,
+        "rib_start_z"
+      ],
+      "diameter": "rib_coil_dia",
+      "section_size": "rib_dia",
+      "height": "rib_len",
+      "revolutions": "rib_twist_turns",
+      "section": "circle",
+      "clockwise": true,
+      "mode": "join"
+    },
+    {
+      "op": "circular_pattern",
+      "id": "rib_pattern",
+      "feature": "rib_coil",
+      "axis": "z",
+      "quantity": "rib_qty",
+      "angle": "360 deg"
+    },
+    {
+      "op": "sketch",
+      "id": "rib_trim_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [
+              "body_r + 0.05 mm",
+              "5 mm"
+            ],
+            [
+              "body_r + 2.5 mm",
+              "5 mm"
+            ],
+            [
+              "body_r + 2.5 mm",
+              "17 mm"
+            ]
+          ],
+          "closed": true
+        },
+        {
+          "type": "polygon",
+          "points": [
+            [
+              "body_r + 0.05 mm",
+              "85.5 mm"
+            ],
+            [
+              "body_r + 2.5 mm",
+              "70 mm"
+            ],
+            [
+              "body_r + 2.5 mm",
+              "85.5 mm"
+            ]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "revolve",
+      "id": "rib_taper_cut",
+      "sketch": "rib_trim_sk",
+      "axis": "z",
+      "angle": "360 deg",
+      "mode": "cut"
+    },
+    {
+      "op": "coil",
+      "id": "base_neck_thread",
+      "axis": "z",
+      "center": [
+        0,
+        0,
+        "127 mm"
+      ],
+      "diameter": "neck_dia",
+      "section_size": "neck_thread_dia",
+      "pitch": "neck_thread_pitch",
+      "revolutions": "neck_thread_turns",
+      "section": "circle",
+      "clockwise": true,
+      "mode": "join"
+    }
+  ]
+}

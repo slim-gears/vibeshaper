@@ -1,0 +1,21 @@
+{
+  "parameters": {
+    "box_width": "60 mm",
+    "box_length": "100 mm",
+    "box_height": "30 mm",
+    "wall_thick": "3 mm",
+    "hole_dia": "12 mm"
+  },
+  "timeline": [
+    {"op": "sketch", "id": "base", "plane": "xy",
+     "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "box_width", "height": "box_length"}]},
+    {"op": "extrude", "sketch": "base", "distance": "box_height", "mode": "new_body"},
+    {"op": "sketch", "id": "pocket", "plane": "xy", "offset": "box_height",
+     "entities": [{"type": "center_rectangle", "center": [0, 0],
+                   "width": "box_width - 2 * wall_thick", "height": "box_length - 2 * wall_thick"}]},
+    {"op": "extrude", "sketch": "pocket", "distance": "-(box_height - wall_thick)", "mode": "cut"},
+    {"op": "sketch", "id": "hole", "plane": "xy",
+     "entities": [{"type": "circle", "center": [0, 0], "diameter": "hole_dia"}]},
+    {"op": "extrude", "sketch": "hole", "distance": "wall_thick", "mode": "cut"}
+  ]
+}

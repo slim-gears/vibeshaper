@@ -1,0 +1,13 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "2ff28d2b-3fa7-4605-96a6-148129f008e1",
+  "author": "Denis Itskovich",
+  "description": {
+    "": "Build parametric design history from natural language prompts using pluggable AI providers"
+  },
+  "version": "0.1.0",
+  "runOnStartup": false,
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

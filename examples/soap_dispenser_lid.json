@@ -1,0 +1,104 @@
+{
+  "name": "soap_dispenser_lid",
+  "parameters": {
+    "skirt_od": "63 mm",
+    "skirt_id": "56 mm",
+    "skirt_thread_dia": "2.2 mm",
+    "skirt_thread_pitch": "4.0 mm",
+    "skirt_thread_turns": "1.5",
+    "pump_neck_dia": "25 mm",
+    "pump_neck_h": "15 mm",
+    "pump_thread_dia": "2.6 mm",
+    "pump_thread_pitch": "3.63 mm",
+    "pump_thread_turns": "1.6"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "lid_profile_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [
+              "31.5 mm",
+              "0 mm"
+            ],
+            [
+              "31.5 mm",
+              "13 mm"
+            ],
+            [
+              "12.5 mm",
+              "32 mm"
+            ],
+            [
+              "12.5 mm",
+              "47 mm"
+            ],
+            [
+              "10 mm",
+              "47 mm"
+            ],
+            [
+              "10 mm",
+              "31 mm"
+            ],
+            [
+              "28 mm",
+              "13 mm"
+            ],
+            [
+              "28 mm",
+              "0 mm"
+            ]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "revolve",
+      "id": "lid_body",
+      "sketch": "lid_profile_sk",
+      "axis": "z",
+      "angle": "360 deg",
+      "mode": "new_body"
+    },
+    {
+      "op": "coil",
+      "id": "skirt_thread_cut",
+      "axis": "z",
+      "center": [
+        0,
+        0,
+        "2.5 mm"
+      ],
+      "diameter": "skirt_id",
+      "section_size": "skirt_thread_dia",
+      "pitch": "skirt_thread_pitch",
+      "revolutions": "skirt_thread_turns",
+      "section": "circle",
+      "clockwise": true,
+      "mode": "cut"
+    },
+    {
+      "op": "coil",
+      "id": "pump_neck_thread",
+      "axis": "z",
+      "center": [
+        0,
+        0,
+        "37 mm"
+      ],
+      "diameter": "pump_neck_dia",
+      "section_size": "pump_thread_dia",
+      "pitch": "pump_thread_pitch",
+      "revolutions": "pump_thread_turns",
+      "section": "circle",
+      "clockwise": true,
+      "mode": "join"
+    }
+  ]
+}

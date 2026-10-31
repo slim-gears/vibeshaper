@@ -1,0 +1,99 @@
+{
+  "name": "mini_funnel",
+  "parameters": {
+    "top_dia": "38 mm",
+    "top_rim_h": "3 mm",
+    "cone_h": "15 mm",
+    "spout_dia": "15 mm",
+    "spout_len": "12 mm",
+    "wall": "1.2 mm",
+    "vent_rib_w": "1.4 mm",
+    "vent_rib_t": "1.4 mm"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "funnel_profile_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [
+              "spout_dia / 2 - wall",
+              0
+            ],
+            [
+              "spout_dia / 2",
+              0
+            ],
+            [
+              "spout_dia / 2",
+              "spout_len"
+            ],
+            [
+              "top_dia / 2",
+              "spout_len + cone_h"
+            ],
+            [
+              "top_dia / 2",
+              "spout_len + cone_h + top_rim_h"
+            ],
+            [
+              "top_dia / 2 - wall",
+              "spout_len + cone_h + top_rim_h"
+            ],
+            [
+              "top_dia / 2 - wall",
+              "spout_len + cone_h"
+            ],
+            [
+              "spout_dia / 2 - wall",
+              "spout_len"
+            ]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "revolve",
+      "id": "funnel_body",
+      "sketch": "funnel_profile_sk",
+      "axis": "z",
+      "angle": "360 deg",
+      "mode": "new_body"
+    },
+    {
+      "op": "sketch",
+      "id": "vent_rib_sk",
+      "plane": "xy",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": [
+            "spout_dia / 2 + vent_rib_t / 2",
+            0
+          ],
+          "width": "vent_rib_t",
+          "height": "vent_rib_w"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "vent_rib",
+      "sketch": "vent_rib_sk",
+      "distance": "spout_len - 1.5 mm",
+      "mode": "join"
+    },
+    {
+      "op": "circular_pattern",
+      "id": "vent_rib_pattern",
+      "feature": "vent_rib",
+      "axis": "z",
+      "quantity": 3,
+      "angle": "360 deg"
+    }
+  ]
+}

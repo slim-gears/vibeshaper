@@ -1,0 +1,26 @@
+{
+ "version": 1,
+ "selection": {
+  "provider": "ollama"
+ },
+ "providers": {
+  "ollama": {
+   "values": {
+    "url": "http://localhost:11434"
+   },
+   "model": "qwen2.5-coder:7b",
+   "model_options": {
+    "qwen2.5-coder:7b": {
+     "think": false
+    }
+   }
+  },
+  "gemini": {
+   "values": {
+    "api_key": ""
+   },
+   "model": "gemini-2.5-flash",
+   "model_options": {}
+  }
+ }
+}

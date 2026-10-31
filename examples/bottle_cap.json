@@ -1,0 +1,110 @@
+{
+  "name": "bottle_cap",
+  "parameters": {
+    "cap_od": "31 mm",
+    "cap_id": "25.6 mm",
+    "cap_inner_h": "16 mm",
+    "top_wall": "2.4 mm",
+    "thread_wire_dia": "2.4 mm",
+    "thread_pitch": "3.63 mm",
+    "thread_turns": "1.8",
+    "rib_w": "1.5 mm",
+    "rib_t": "1.0 mm",
+    "rib_qty": "24"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "cap_profile_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              "cap_od / 2",
+              0
+            ],
+            [
+              "cap_od / 2",
+              "top_wall + cap_inner_h"
+            ],
+            [
+              "cap_id / 2",
+              "top_wall + cap_inner_h"
+            ],
+            [
+              "cap_id / 2",
+              "top_wall"
+            ],
+            [
+              0,
+              "top_wall"
+            ]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "revolve",
+      "id": "cap_body",
+      "sketch": "cap_profile_sk",
+      "axis": "z",
+      "angle": "360 deg",
+      "mode": "new_body"
+    },
+    {
+      "op": "coil",
+      "id": "cap_thread_cut",
+      "axis": "z",
+      "center": [
+        0,
+        0,
+        "top_wall + 3.0 mm"
+      ],
+      "diameter": "cap_id",
+      "section_size": "thread_wire_dia",
+      "pitch": "thread_pitch",
+      "revolutions": "thread_turns",
+      "section": "circle",
+      "clockwise": true,
+      "mode": "cut"
+    },
+    {
+      "op": "sketch",
+      "id": "grip_rib_sk",
+      "plane": "xy",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": [
+            "cap_od / 2 + rib_t / 2",
+            0
+          ],
+          "width": "rib_t",
+          "height": "rib_w"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "grip_rib",
+      "sketch": "grip_rib_sk",
+      "distance": "top_wall + cap_inner_h",
+      "mode": "join"
+    },
+    {
+      "op": "circular_pattern",
+      "id": "grip_rib_pattern",
+      "feature": "grip_rib",
+      "axis": "z",
+      "quantity": "rib_qty",
+      "angle": "360 deg"
+    }
+  ]
+}

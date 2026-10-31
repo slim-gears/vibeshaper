@@ -1,0 +1,221 @@
+{
+  "name": "flanged_pipe_elbow",
+  "parameters": {
+    "pipe_od": "30 mm",
+    "pipe_id": "16 mm",
+    "pipe_length": "80 mm",
+    "flange_dia": "80 mm",
+    "flange_thick": "10 mm",
+    "bolt_r": "30 mm",
+    "bolt_dia": "8 mm",
+    "bolt_qty": "6",
+    "boss_dia": "40 mm",
+    "boss_len": "25 mm",
+    "bore_dia": "20 mm",
+    "gusset_thick": "4 mm",
+    "chamfer_dist": "2 mm"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "sweep_path",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polyline",
+          "points": [
+            [0, "pipe_length"],
+            [0, 0],
+            ["pipe_length", 0]
+          ],
+          "closed": false
+        }
+      ]
+    },
+    {
+      "op": "sketch",
+      "id": "pipe_profile",
+      "plane": "xy",
+      "offset": "pipe_length",
+      "entities": [
+        {
+          "type": "circle",
+          "center": [0, 0],
+          "diameter": "pipe_od"
+        }
+      ]
+    },
+    {
+      "op": "sweep",
+      "id": "pipe_body",
+      "sketch": "pipe_profile",
+      "path": "sweep_path",
+      "mode": "new_body"
+    },
+    {
+      "op": "sketch",
+      "id": "flange_sk",
+      "plane": "xy",
+      "offset": "pipe_length - flange_thick",
+      "entities": [
+        {
+          "type": "circle",
+          "center": [0, 0],
+          "diameter": "flange_dia"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "flange_extrude",
+      "sketch": "flange_sk",
+      "distance": "flange_thick",
+      "mode": "join"
+    },
+    {
+      "op": "sketch",
+      "id": "bolt_hole_sk",
+      "plane": "xy",
+      "offset": "pipe_length - flange_thick",
+      "entities": [
+        {
+          "type": "circle",
+          "center": ["bolt_r", 0],
+          "diameter": "bolt_dia"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "bolt_cut",
+      "sketch": "bolt_hole_sk",
+      "distance": "flange_thick",
+      "mode": "cut"
+    },
+    {
+      "op": "circular_pattern",
+      "feature": "bolt_cut",
+      "axis": "z",
+      "quantity": "bolt_qty",
+      "angle": "360 deg"
+    },
+    {
+      "op": "sketch",
+      "id": "boss_sk",
+      "plane": "yz",
+      "offset": "pipe_length",
+      "entities": [
+        {
+          "type": "circle",
+          "center": [0, 0],
+          "diameter": "boss_dia"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "boss_extrude",
+      "sketch": "boss_sk",
+      "distance": "boss_len",
+      "mode": "join"
+    },
+    {
+      "op": "sketch",
+      "id": "core_profile",
+      "plane": "xy",
+      "offset": "pipe_length",
+      "entities": [
+        {
+          "type": "circle",
+          "center": [0, 0],
+          "diameter": "pipe_id"
+        }
+      ]
+    },
+    {
+      "op": "sketch",
+      "id": "core_path",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polyline",
+          "points": [
+            [0, "pipe_length + 2 mm"],
+            [0, 0],
+            ["pipe_length + boss_len + 2 mm", 0]
+          ],
+          "closed": false
+        }
+      ]
+    },
+    {
+      "op": "sweep",
+      "id": "through_bore_cut",
+      "sketch": "core_profile",
+      "path": "core_path",
+      "mode": "cut"
+    },
+    {
+      "op": "sketch",
+      "id": "outlet_bore_sk",
+      "plane": "yz",
+      "offset": "pipe_length + boss_len",
+      "entities": [
+        {
+          "type": "circle",
+          "center": [0, 0],
+          "diameter": "bore_dia"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "outlet_bore_cut",
+      "sketch": "outlet_bore_sk",
+      "distance": "-boss_len",
+      "mode": "cut"
+    },
+    {
+      "op": "thread",
+      "feature": "outlet_bore_cut",
+      "target": "internal",
+      "designation": "M20x2.5",
+      "modeled": true
+    },
+    {
+      "op": "chamfer",
+      "distance": "chamfer_dist",
+      "edges": "circular"
+    },
+    {
+      "op": "sketch",
+      "id": "gusset_sk",
+      "plane": "xz",
+      "offset": "pipe_od / 4",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [0, "pipe_length - flange_thick - 5 mm"],
+            [0, 0],
+            ["pipe_length - 5 mm", 0]
+          ],
+          "closed": true
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "gusset_body",
+      "sketch": "gusset_sk",
+      "distance": "gusset_thick",
+      "mode": "join"
+    },
+    {
+      "op": "mirror",
+      "feature": "gusset_body",
+      "plane": "xz",
+      "combine": true
+    }
+  ]
+}

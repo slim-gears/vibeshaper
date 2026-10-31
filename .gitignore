@@ -1,0 +1,23 @@
+# User settings & secrets (contains API keys & endpoints)
+settings.json
+
+# Logs & temp output
+*.log
+*.log.old
+last_response.txt
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosv
+
+# OS metadata
+.DS_Store
+Thumbs.db

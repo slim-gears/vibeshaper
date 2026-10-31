@@ -1,0 +1,226 @@
+{
+  "name": "planter_bottom_corner",
+  "parameters": {
+    "corner_size_x": "120 mm",
+    "corner_size_y": "120 mm",
+    "rim_height": "35 mm",
+    "outer_wall_thick": "2.5 mm",
+    "channel_width": "22 mm",
+    "channel_depth": "30 mm",
+    "inner_wall_thick": "2.5 mm",
+    "inner_wall_offset": "outer_wall_thick + channel_width + inner_wall_thick",
+    "floor_drop": "18 mm",
+    "floor_width": "corner_size_x - inner_wall_offset",
+    "floor_length": "corner_size_y - inner_wall_offset",
+    "floor_center_x": "inner_wall_offset + floor_width / 2",
+    "floor_center_y": "inner_wall_offset + floor_length / 2",
+    "chan_x_len": "corner_size_x - outer_wall_thick",
+    "chan_x_cx": "outer_wall_thick + chan_x_len / 2",
+    "chan_x_cy": "outer_wall_thick + channel_width / 2",
+    "chan_y_len": "corner_size_y - outer_wall_thick",
+    "chan_y_cx": "outer_wall_thick + channel_width / 2",
+    "chan_y_cy": "outer_wall_thick + chan_y_len / 2",
+    "rib_thick": "2.7 mm",
+    "rib_gap": "27.7 mm",
+    "rib_pitch": "rib_gap + rib_thick",
+    "rib_count_y": "3",
+    "rib_count_x": "3",
+    "rib_start_y": "45 mm",
+    "rib_start_x": "45 mm",
+    "foot_pos_x": "58 mm",
+    "foot_pos_y": "58 mm",
+    "foot_dia": "22 mm",
+    "foot_height": "12 mm",
+    "slot_width": "6 mm",
+    "slot_len": "10 mm",
+    "slot_pos_y": "58 mm",
+    "slot_height": "10 mm"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "block_sk",
+      "plane": "xy",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["corner_size_x / 2", "corner_size_y / 2"],
+          "width": "corner_size_x",
+          "height": "corner_size_y"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "main_block",
+      "sketch": "block_sk",
+      "distance": "rim_height",
+      "mode": "new_body"
+    },
+    {
+      "op": "sketch",
+      "id": "floor_recess_sk",
+      "plane": "xy",
+      "offset": "rim_height",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["floor_center_x", "floor_center_y"],
+          "width": "floor_width",
+          "height": "floor_length"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "floor_cut",
+      "sketch": "floor_recess_sk",
+      "distance": "-floor_drop",
+      "mode": "cut"
+    },
+    {
+      "op": "sketch",
+      "id": "chan_x_sk",
+      "plane": "xy",
+      "offset": "rim_height",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["chan_x_cx", "chan_x_cy"],
+          "width": "chan_x_len",
+          "height": "channel_width"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "chan_x_cut",
+      "sketch": "chan_x_sk",
+      "distance": "-channel_depth",
+      "mode": "cut"
+    },
+    {
+      "op": "sketch",
+      "id": "chan_y_sk",
+      "plane": "xy",
+      "offset": "rim_height",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["chan_y_cx", "chan_y_cy"],
+          "width": "channel_width",
+          "height": "chan_y_len"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "chan_y_cut",
+      "sketch": "chan_y_sk",
+      "distance": "-channel_depth",
+      "mode": "cut"
+    },
+    {
+      "op": "sketch",
+      "id": "y_rib_sk",
+      "plane": "xy",
+      "offset": "rim_height - channel_depth",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["outer_wall_thick + channel_width / 2", "rib_start_y"],
+          "width": "channel_width",
+          "height": "rib_thick"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "y_rib_feat",
+      "sketch": "y_rib_sk",
+      "distance": "channel_depth",
+      "mode": "join"
+    },
+    {
+      "op": "linear_pattern",
+      "feature": "y_rib_feat",
+      "direction": "y",
+      "distance": "rib_pitch",
+      "quantity": "rib_count_y"
+    },
+    {
+      "op": "sketch",
+      "id": "x_rib_sk",
+      "plane": "xy",
+      "offset": "rim_height - channel_depth",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["rib_start_x", "outer_wall_thick + channel_width / 2"],
+          "width": "rib_thick",
+          "height": "channel_width"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "x_rib_feat",
+      "sketch": "x_rib_sk",
+      "distance": "channel_depth",
+      "mode": "join"
+    },
+    {
+      "op": "linear_pattern",
+      "feature": "x_rib_feat",
+      "direction": "x",
+      "distance": "rib_pitch",
+      "quantity": "rib_count_x"
+    },
+    {
+      "op": "sketch",
+      "id": "foot_sk",
+      "plane": "xy",
+      "offset": "rim_height - floor_drop",
+      "entities": [
+        {
+          "type": "circle",
+          "center": ["foot_pos_x", "foot_pos_y"],
+          "diameter": "foot_dia"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "foot_feat",
+      "sketch": "foot_sk",
+      "distance": "foot_height",
+      "mode": "join"
+    },
+    {
+      "op": "chamfer",
+      "edges": "circular",
+      "distance": "1 mm"
+    },
+    {
+      "op": "sketch",
+      "id": "slot_sk",
+      "plane": "xy",
+      "offset": "rim_height - floor_drop",
+      "entities": [
+        {
+          "type": "center_rectangle",
+          "center": ["inner_wall_offset - inner_wall_thick / 2", "slot_pos_y"],
+          "width": "slot_width",
+          "height": "slot_len"
+        }
+      ]
+    },
+    {
+      "op": "extrude",
+      "id": "slot_cut",
+      "sketch": "slot_sk",
+      "distance": "slot_height",
+      "mode": "cut"
+    }
+  ]
+}
