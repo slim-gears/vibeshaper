@@ -1,5 +1,5 @@
 name: Feature request
-description: An idea for PromptCAD
+description: An idea for VibeShaper
 labels: [enhancement]
 body:
   - type: textarea
@@ -12,7 +12,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: How could PromptCAD help?
+      label: How could VibeShaper help?
   - type: textarea
     id: example
     attributes:

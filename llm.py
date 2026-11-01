@@ -1,4 +1,4 @@
-"""PromptCAD LLM orchestration: prompt -> validated DSL dict.
+"""VibeShaper LLM orchestration: prompt -> validated DSL dict.
 Generation goes through whichever provider plugin (providers/) the caller names; nothing here
 knows any particular provider.
 """
@@ -13,7 +13,7 @@ try:
 except ImportError:  # run as a plain script
     import dsl, providers, userdata
 
-LOG_FILE = userdata.path('promptcad.log')
+LOG_FILE = userdata.path('vibeshaper.log')
 LAST_RESPONSE_FILE = userdata.path('last_response.txt')
 
 SYSTEM = """You are a CAD engineer. Convert the user's request into a parametric design written in this JSON DSL.
@@ -205,7 +205,7 @@ def get_provider(provider_id):
 
 
 def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text='', error=None, attempt=1):
-    """Append a full record of the LLM call to promptcad.log and overwrite last_response.txt."""
+    """Append a full record of the LLM call to vibeshaper.log and overwrite last_response.txt."""
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     sep = '=' * 80
     prompt_str = prompt_or_msg if isinstance(prompt_or_msg, str) else json.dumps(prompt_or_msg, indent=2)
@@ -242,7 +242,7 @@ def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text=
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(block)
     except Exception as e:
-        sys.stderr.write(f"PromptCAD: failed to write log: {e}\n")
+        sys.stderr.write(f"VibeShaper: failed to write log: {e}\n")
 
     if response_text:
         try:
@@ -310,7 +310,7 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
                     result = run_tool(c.name, c.arguments)
                 messages.append({'role': 'tool', 'tool_call_id': c.id, 'name': c.name,
                                  'content': json.dumps(result, default=str)})
-            log(f'PromptCAD: model called {", ".join(c.name for c in calls)} ({used} tool calls so far)')
+            log(f'VibeShaper: model called {", ".join(c.name for c in calls)} ({used} tool calls so far)')
             continue
 
         attempt += 1
@@ -323,7 +323,7 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
             return d
         except ValueError as e:  # JSONDecodeError is a ValueError
             err = str(e)
-            log(f'PromptCAD: invalid DSL ({err}):\n{text}')
+            log(f'VibeShaper: invalid DSL ({err}):\n{text}')
             log_transcript(provider_id, model, request, text, th_str, error=err, attempt=attempt)
             messages.append({'role': 'user', 'content': fix_request(err)})
     raise ValueError(f'model gave invalid DSL {tries} times; last error: {err}')
@@ -345,7 +345,7 @@ def new_conversation(prompt):
 def _main(argv):
     """python llm.py --provider ID --model NAME [--set key=value ...] [--think] prompt words"""
     import argparse
-    ap = argparse.ArgumentParser(description='Generate a PromptCAD design from the command line.')
+    ap = argparse.ArgumentParser(description='Generate a VibeShaper design from the command line.')
     ap.add_argument('--provider', required=True, choices=[p.id for p in providers.get_all_providers()])
     ap.add_argument('--model', required=True)
     ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE', help="a provider setting")

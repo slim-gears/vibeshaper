@@ -1,4 +1,4 @@
-"""Google Gemini model provider for PromptCAD."""
+"""Google Gemini model provider for VibeShaper."""
 import json
 import os
 import urllib.error
@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .base import BaseProvider, GenerateOptions, ModelInfo, Reply, SettingDef, ToolCall
 
 _API = 'https://generativelanguage.googleapis.com/v1beta'
-_UA = {'User-Agent': 'PromptCAD/0.2'}
+_UA = {'User-Agent': 'VibeShaper/0.2'}
 _ENV_KEYS = ('GEMINI_API_KEY', 'GOOGLE_API_KEY')
 
 
@@ -22,7 +22,7 @@ def _api_error(e: urllib.error.HTTPError) -> str:
 
 
 def _to_gemini(messages):
-    """PromptCAD's provider-neutral messages -> (systemInstruction, contents)."""
+    """VibeShaper's provider-neutral messages -> (systemInstruction, contents)."""
     system, contents = None, []
     for m in messages:
         role = m.get('role')
@@ -151,7 +151,7 @@ class GeminiProvider(BaseProvider):
                 msg = _api_error(e)
                 if 'think' not in msg.lower():
                     raise RuntimeError(f'Gemini: {msg}')
-                log(f'PromptCAD: {model_name} rejected the thinking setting ({msg}); retrying without it')
+                log(f'VibeShaper: {model_name} rejected the thinking setting ({msg}); retrying without it')
                 payload['generationConfig'].pop('thinkingConfig')
                 resp = open_stream()
         except urllib.error.HTTPError as e:
@@ -207,9 +207,9 @@ class GeminiProvider(BaseProvider):
 
         res_text = ''.join(out)
         if calls:
-            log(f'PromptCAD: Gemini asked for {len(calls)} tool calls (thinking {thinking} chars)')
+            log(f'VibeShaper: Gemini asked for {len(calls)} tool calls (thinking {thinking} chars)')
             return Reply(res_text, calls)
         if not res_text:
             raise RuntimeError('Gemini returned an empty response')
-        log(f'PromptCAD: got {len(res_text)} chars from Gemini (thinking {thinking} chars)')
+        log(f'VibeShaper: got {len(res_text)} chars from Gemini (thinking {thinking} chars)')
         return res_text

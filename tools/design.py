@@ -144,7 +144,7 @@ class Context:
 
     @classmethod
     def from_tool_context(cls, tc):
-        """Built from what PromptCAD hands every toolkit: the app, the design and our saved state."""
+        """Built from what VibeShaper hands every toolkit: the app, the design and our saved state."""
         return cls(tc.design, Refs(tc.state.setdefault('refs', {})), _selection(tc.app),
                    lambda a, b: tc.app.measureManager.measureMinimumDistance(a, b).value)
 

@@ -1,6 +1,6 @@
-# PromptCAD JSON DSL Specification
+# VibeShaper JSON DSL Specification
 
-This document provides the definitive specification for the PromptCAD Parametric DSL. Any LLM or generator following this specification will produce valid, syntactically and geometrically correct CAD timelines that build reliably inside Autodesk Fusion 360 without errors.
+This document provides the definitive specification for the VibeShaper Parametric DSL. Any LLM or generator following this specification will produce valid, syntactically and geometrically correct CAD timelines that build reliably inside Autodesk Fusion 360 without errors.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Chat sessions for PromptCAD: conversation history, design versions, and persistence.
+"""Chat sessions for VibeShaper: conversation history, design versions, and persistence.
 
 Pure stdlib so it can be tested outside Fusion. A design document holds a ChatStore;
 each Chat owns one timeline group (its current version) and the model conversation.
@@ -77,7 +77,7 @@ class Chat:
         return copy.deepcopy(v['dsl']) if v else None
 
     def group_name(self, n):
-        return f'PromptCAD · {self.title} · v{n} [{self.id}]'
+        return f'VibeShaper · {self.title} · v{n} [{self.id}]'
 
     def add_version(self, d, source, group_name=None, param_map=None, feature_count=0, placement=None):
         n = (self.versions[-1]['n'] + 1) if self.versions else 1

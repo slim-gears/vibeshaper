@@ -2,7 +2,7 @@
 
 A toolkit is a set of related tools the model can call. It describes them, runs them, says in
 one line what each call did (for the panel), and may add a note to the system prompt and a text
-summary for models that can't call tools. PromptCAD knows nothing about any particular toolkit.
+summary for models that can't call tools. VibeShaper knows nothing about any particular toolkit.
 
 Tools always run on Fusion's main thread, so they may use the Fusion API freely.
 """
@@ -19,7 +19,7 @@ class ToolContext:
     app:    the Fusion application
     design: the active Fusion design
     state:  this toolkit's own saved data for the document, a JSON-friendly dict it may change.
-            PromptCAD keeps it with the document; how and where is not the toolkit's concern.
+            VibeShaper keeps it with the document; how and where is not the toolkit's concern.
     """
 
     def __init__(self, app, design, state=None):

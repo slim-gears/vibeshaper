@@ -1,6 +1,6 @@
-/* PromptCAD chat panel.
+/* VibeShaper chat panel.
  *
- * Talks to PromptCAD.py through Fusion's palette bridge:
+ * Talks to VibeShaper.py through Fusion's palette bridge:
  *   panel -> Python: adsk.fusionSendData(action, JSON)
  *   Python -> panel: fusionJavaScriptHandler.handle('event', JSON)
  * Outside Fusion (a normal browser) it runs against MockBackend so the UI can be reviewed.
@@ -87,8 +87,8 @@
     try {
       return Promise.resolve(backend(action, data));
     } catch (e) {
-      console.error('PromptCAD bridge error', e);
-      toast('Could not reach PromptCAD');
+      console.error('VibeShaper bridge error', e);
+      toast('Could not reach VibeShaper');
       return Promise.resolve('');
     }
   }
@@ -98,7 +98,7 @@
       try {
         if (action === 'event') onEvent(JSON.parse(data));
       } catch (e) {
-        console.error('PromptCAD event error', e, data);
+        console.error('VibeShaper event error', e, data);
       }
       return 'OK';
     },
@@ -281,7 +281,7 @@
     return h('div', { class: 'empty' },
       h('div', { class: 'hero' }, icon('cube')),
       h('h1', { text: 'What should we make?' }),
-      h('p', { text: 'Describe a part. PromptCAD builds it as an editable, parametric timeline, and you can refine it by chatting.' }),
+      h('p', { text: 'Describe a part. VibeShaper builds it as an editable, parametric timeline, and you can refine it by chatting.' }),
       h('div', { class: 'examples' }, EXAMPLES.map(([title, text]) =>
         h('button', { class: 'example', onclick: () => { setInput(text); $('input').focus(); } },
           h('b', { text: title }), h('span', { text: text.length > 78 ? text.slice(0, 76) + '…' : text })))),
@@ -879,7 +879,7 @@
         h('div', { class: 'field' }, h('span', { class: 'field-label', text: 'New chats build into' }), defMode,
           h('span', { class: 'help', text: 'Each chat can switch with the button under the message box.' })),
         h('div', { class: 'field' }, h('label', { for: 'set_auto_fix', text: 'Fix failed builds automatically' }), fix,
-          h('span', { class: 'help', text: 'When a build fails, PromptCAD sends the error to the model and asks for a corrected design.' }))),
+          h('span', { class: 'help', text: 'When a build fails, VibeShaper sends the error to the model and asks for a corrected design.' }))),
     ];
   }
 
@@ -1124,7 +1124,7 @@
   }
 
   // ======================================================================
-  // MockBackend: stands in for PromptCAD.py when the panel runs in a browser.
+  // MockBackend: stands in for VibeShaper.py when the panel runs in a browser.
   // Mirrors the event shapes the add-in sends.
   // ======================================================================
   const MockBackend = {
@@ -1249,7 +1249,7 @@
                 if (/fail/i.test(text)) {
                   turn.status = 'error'; busy = false;
                   turn.attempts = [{ error: "timeline[2] (sweep): profile is not perpendicular to the path" }, { error: 'timeline[2] (sweep): profile is not perpendicular to the path' }];
-                  turn.error = 'PromptCAD: build failed 3 times\ntimeline[2] (sweep): profile is not perpendicular to the path\nTraceback (most recent call last):\n  File "dsl.py", line 1001, in execute';
+                  turn.error = 'VibeShaper: build failed 3 times\ntimeline[2] (sweep): profile is not perpendicular to the path\nTraceback (most recent call last):\n  File "dsl.py", line 1001, in execute';
                   pushChat();
                 } else if (/fix/i.test(text)) {
                   turn.attempts = [{ error: 'timeline[4] (extrude): sketch "flange_sk" has no closed profiles' }];

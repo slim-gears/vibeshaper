@@ -1,4 +1,4 @@
-/* PromptCAD chat panel. Tokens first; light by default, dark via OS or data-theme. */
+/* VibeShaper chat panel. Tokens first; light by default, dark via OS or data-theme. */
 :root {
   --bg: #f4f5f7;
   --surface: #ffffff;

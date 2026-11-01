@@ -1,4 +1,4 @@
-"""PromptCAD add-in for Autodesk Fusion 360.
+"""VibeShaper add-in for Autodesk Fusion 360.
 Builds parametric design history from natural language prompts using pluggable AI providers.
 
 UI: a docked HTML palette (palette/) with a chat per part. Each chat owns one timeline group;
@@ -46,14 +46,14 @@ _reload_plugins(toolbox)
 importlib.reload(llm)
 importlib.reload(chat)
 
-CMD_ID = 'PromptCAD_Generate'
-BUILD_ID = 'PromptCAD_Build'
-PALETTE_ID = 'PromptCAD_Palette'
-EVENT_ID = 'PromptCAD_Result'
-PROGRESS_EVENT_ID = 'PromptCAD_Progress'
-MODELS_EVENT_ID = 'PromptCAD_Models'
-SAVE_EVENT_ID = 'PromptCAD_Save'
-TOOL_EVENT_ID = 'PromptCAD_Tool'  # the worker asks the main thread to run a tool
+CMD_ID = 'VibeShaper_Generate'
+BUILD_ID = 'VibeShaper_Build'
+PALETTE_ID = 'VibeShaper_Palette'
+EVENT_ID = 'VibeShaper_Result'
+PROGRESS_EVENT_ID = 'VibeShaper_Progress'
+MODELS_EVENT_ID = 'VibeShaper_Models'
+SAVE_EVENT_ID = 'VibeShaper_Save'
+TOOL_EVENT_ID = 'VibeShaper_Tool'  # the worker asks the main thread to run a tool
 TOOL_TIMEOUT = 30
 PANEL_ID = 'SolidCreatePanel'
 # auto_fix: automatic fixes after a failed build; default_mode: where new chats build
@@ -61,7 +61,7 @@ GENERAL_DEFAULTS = {'theme': 'system', 'auto_fix': 2, 'default_mode': 'component
 THEMES = ('system', 'light', 'dark')
 BUILD_MODES = ('component', 'new_body')
 MAX_AUTO_FIX = 5
-ATTR_GROUP, ATTR_NAME = 'PromptCAD', 'chats'
+ATTR_GROUP, ATTR_NAME = 'VibeShaper', 'chats'
 HERE = pathlib.Path(__file__).parent
 SETTINGS = userdata.path('settings.json')  # outside the add-in folder: see userdata.py
 SETTINGS_VERSION = 1  # layout of settings.json; bump (and upgrade old files) when it changes
@@ -89,7 +89,7 @@ def _log(msg):
 # settings.json layout (version 1):
 #   {"version": 1, "general": {...}, "selection": {"provider": id},
 #    "providers": {id: {"values": {...}, "model": str, "model_options": {model: {"think": bool}}}}}
-# "values" belong to the provider and are all it ever sees; the rest is PromptCAD's own record.
+# "values" belong to the provider and are all it ever sees; the rest is VibeShaper's own record.
 
 def _provider_entry(prov, saved=None):
     saved = saved if isinstance(saved, dict) else {}
@@ -185,7 +185,7 @@ def _emit(ev):
     try:
         pal.sendInfoToHTML('event', json.dumps(ev))
     except Exception as e:
-        _log(f'PromptCAD: could not update panel: {e}')
+        _log(f'VibeShaper: could not update panel: {e}')
 
 
 def _toast(text):
@@ -268,7 +268,7 @@ def _store(reload=False):
         attr = design.attributes.itemByName(ATTR_GROUP, ATTR_NAME)
         text = attr.value if attr else ''
     except Exception as e:
-        _log(f'PromptCAD: could not read saved chats: {e}')
+        _log(f'VibeShaper: could not read saved chats: {e}')
     _ctx['store'] = chat.ChatStore.from_json(text)
     return _ctx['store']
 
@@ -310,7 +310,7 @@ def _save_store():
         elif store.chats:
             design.attributes.add(ATTR_GROUP, ATTR_NAME, payload)
     except Exception as e:
-        _log(f'PromptCAD: could not save chats in the design: {e}')
+        _log(f'VibeShaper: could not save chats in the design: {e}')
 
 
 # ---------------------------------------------------------------- jobs
@@ -475,7 +475,7 @@ class _ToolRequest(adsk.core.CustomEventHandler):
                     _emit({'type': 'stream', 'chat_id': c.id, 'turn_id': t['id'], 'tool': entry})
                     _save_store_later()
         except Exception:
-            _log('PromptCAD: tool error\n' + traceback.format_exc())
+            _log('VibeShaper: tool error\n' + traceback.format_exc())
         finally:
             if slot is not None:
                 slot['result'] = result
@@ -501,7 +501,7 @@ class _Progress(adsk.core.CustomEventHandler):
                 t['chars'] = ev['chars'] = r.get('chars', 0)
             _emit(ev)
         except Exception:
-            _log('PromptCAD: progress error\n' + traceback.format_exc())
+            _log('VibeShaper: progress error\n' + traceback.format_exc())
 
 
 class _Result(adsk.core.CustomEventHandler):
@@ -527,7 +527,7 @@ class _Result(adsk.core.CustomEventHandler):
                 _fail_turn(c, t, r['error'])
                 return
             _job['dsl'] = r['dsl']
-            _log('PromptCAD DSL:\n' + json.dumps(r['dsl']))
+            _log('VibeShaper DSL:\n' + json.dumps(r['dsl']))
             _prepare_build(c, t)
         except Exception:
             c, t = _job_target()
@@ -600,7 +600,7 @@ class _BuildExecute(adsk.core.CommandEventHandler):
                 if removed:
                     replaced = prev['n']
                 if removed == 'suppressed':
-                    _log(f'PromptCAD: Fusion would not delete v{prev["n"]}; suppressed it instead')
+                    _log(f'VibeShaper: Fusion would not delete v{prev["n"]}; suppressed it instead')
             stage = 'place'
             mode = _mode(c)
             comp = None
@@ -611,7 +611,7 @@ class _BuildExecute(adsk.core.CommandEventHandler):
                     comp = occ.component
                     placement = {'mode': mode, 'label': comp.name}
                 except dsl.ComponentsNotAllowed:
-                    _log('PromptCAD: this document holds one component; building as new bodies')
+                    _log('VibeShaper: this document holds one component; building as new bodies')
             stage = 'build'
             n = (c.versions[-1]['n'] + 1) if c.versions else 1
             info = dsl.execute(design, d, group_name=c.group_name(n), comp=comp)
@@ -639,7 +639,7 @@ class _BuildExecute(adsk.core.CommandEventHandler):
             c.commit_model_success(t, d)
         else:
             c.note_manual_design(d)
-        _log(f'PromptCAD: built v{v["n"]} (attempt {_job.get("builds", 0) + 1})')
+        _log(f'VibeShaper: built v{v["n"]} (attempt {_job.get("builds", 0) + 1})')
         _log_transcript(d, None)
         _finish_job()
         _save_store_later()
@@ -664,7 +664,7 @@ def _log_transcript(d, err):
         llm.log_transcript(_job.get('provider_id', '-'), _job.get('model', ''), prompt, json.dumps(d or {}),
                            (t or {}).get('thought', ''), error=err, attempt=_job.get('builds', 0) + 1)
     except Exception as e:
-        _log(f'PromptCAD: log_transcript error: {e}')
+        _log(f'VibeShaper: log_transcript error: {e}')
 
 
 def _short_error(err):
@@ -680,7 +680,7 @@ def _handle_build_failure(err, heal=True, title='Build failed'):
         return
     _job['builds'] = _job.get('builds', 0) + 1
     attempt = _job['builds']
-    _log(f'PromptCAD: build failed (attempt {attempt}):\n{err}')
+    _log(f'VibeShaper: build failed (attempt {attempt}):\n{err}')
     _log_transcript(_job.get('dsl'), err)
 
     can_heal = heal and t.get('kind') == 'model' and attempt <= int(_general()['auto_fix']) and _job.get('messages')
@@ -712,7 +712,7 @@ def _mode(c):
 
 def _component_name(c, d):
     name = str(d.get('name') or '').replace('_', ' ').strip() or c.title
-    return name[:40].strip() or 'PromptCAD part'
+    return name[:40].strip() or 'VibeShaper part'
 
 
 def _start_model_turn(c, t, text):
@@ -990,7 +990,7 @@ def _act_save_provider(data):
 
 
 def _act_set_model_option(data):
-    """Per-model choices PromptCAD keeps (think on/off)."""
+    """Per-model choices VibeShaper keeps (think on/off)."""
     prov, s, entry = _provider_and_entry(data.get('provider'))
     model = str(data.get('model') or '')
     if not prov or not model:
@@ -1058,7 +1058,7 @@ class _PaletteHTML(adsk.core.HTMLEventHandler):
             _toast(str(e))
         except Exception:
             err = traceback.format_exc()
-            _log(f'PromptCAD: {action} failed\n{err}')
+            _log(f'VibeShaper: {action} failed\n{err}')
             _toast(f'Something went wrong ({action}). Details are in the Text Commands window.')
         try:
             html_args.returnData = 'OK'
@@ -1074,7 +1074,7 @@ class _DocumentActivated(adsk.core.DocumentEventHandler):
             _store(reload=True)
             _emit_state()
         except Exception:
-            _log('PromptCAD: document switch error\n' + traceback.format_exc())
+            _log('VibeShaper: document switch error\n' + traceback.format_exc())
 
 
 def _show_palette():
@@ -1085,9 +1085,9 @@ def _show_palette():
         return pal
     url = str(PALETTE_HTML).replace('\\', '/')
     try:
-        pal = ui.palettes.add(PALETTE_ID, 'PromptCAD', url, True, True, True, 380, 720, True)
+        pal = ui.palettes.add(PALETTE_ID, 'VibeShaper', url, True, True, True, 380, 720, True)
     except Exception:
-        pal = ui.palettes.add(PALETTE_ID, 'PromptCAD', url, True, True, True, 380, 720)
+        pal = ui.palettes.add(PALETTE_ID, 'VibeShaper', url, True, True, True, 380, 720)
     try:
         pal.dockingState = adsk.core.PaletteDockingStates.PaletteDockStateRight
     except Exception:
@@ -1106,7 +1106,7 @@ class _OpenPanelExecute(adsk.core.CommandEventHandler):
         try:
             _show_palette()
         except Exception:
-            _app().userInterface.messageBox('PromptCAD could not open its panel:\n' + traceback.format_exc())
+            _app().userInterface.messageBox('VibeShaper could not open its panel:\n' + traceback.format_exc())
 
 
 def run(context):
@@ -1116,8 +1116,9 @@ def run(context):
         defs = ui.commandDefinitions
         panel = ui.allToolbarPanels.itemById(PANEL_ID)
 
-        # Clean up legacy definitions
-        for legacy_id in ('OllamaCAD_Settings', 'PromptCAD_Settings', 'OllamaCAD_Generate'):
+        # Remove buttons left by older names of this add-in
+        for legacy_id in ('PromptCAD_Generate', 'PromptCAD_Build', 'PromptCAD_Settings',
+                          'OllamaCAD_Settings', 'OllamaCAD_Generate'):
             old_ctrl = panel.controls.itemById(legacy_id)
             if old_ctrl:
                 old_ctrl.deleteMe()
@@ -1126,9 +1127,9 @@ def run(context):
                 old_def.deleteMe()
 
         cmd_def = defs.itemById(CMD_ID) or defs.addButtonDefinition(
-            CMD_ID, 'PromptCAD', 'Chat with an AI to build and refine a parametric design')
+            CMD_ID, 'VibeShaper', 'Chat with an AI to build and refine a parametric design')
         _keep(_OpenPanelCreated(), cmd_def.commandCreated)
-        build_def = defs.itemById(BUILD_ID) or defs.addButtonDefinition(BUILD_ID, 'PromptCAD Build', '')
+        build_def = defs.itemById(BUILD_ID) or defs.addButtonDefinition(BUILD_ID, 'VibeShaper Build', '')
         _keep(_BuildCreated(), build_def.commandCreated)
 
         for eid in (EVENT_ID, PROGRESS_EVENT_ID, MODELS_EVENT_ID, SAVE_EVENT_ID, TOOL_EVENT_ID):
@@ -1142,7 +1143,7 @@ def run(context):
 
         ctrl = panel.controls.itemById(CMD_ID) or panel.controls.addCommand(cmd_def)
         ctrl.isPromoted = True
-        app.log('PromptCAD: loaded (Solid > Create)')
+        app.log('VibeShaper: loaded (Solid > Create)')
     except Exception:
         ui.messageBox(traceback.format_exc())
 
@@ -1169,10 +1170,10 @@ def stop(context):
                 d.deleteMe()
         _handlers.clear()
         _ctx['store'] = None
-        app.log('PromptCAD: unloaded')
+        app.log('VibeShaper: unloaded')
         # Purge modules so subsequent 'Run' loads fresh edits from disk
         for mod_name in list(sys.modules.keys()):
-            if mod_name == 'PromptCAD' or mod_name.startswith('PromptCAD.'):
+            if mod_name == 'VibeShaper' or mod_name.startswith('VibeShaper.'):
                 sys.modules.pop(mod_name, None)
     except Exception:
         ui.messageBox(traceback.format_exc())

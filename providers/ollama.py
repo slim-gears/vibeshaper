@@ -1,4 +1,4 @@
-"""Ollama model provider for PromptCAD."""
+"""Ollama model provider for VibeShaper."""
 import json
 import urllib.error
 import urllib.request
@@ -7,11 +7,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .base import BaseProvider, GenerateOptions, ModelInfo, Reply, SettingDef, ToolCall
 
-_UA = {'User-Agent': 'PromptCAD/0.2'}
+_UA = {'User-Agent': 'VibeShaper/0.2'}
 
 
 def _to_ollama(messages):
-    """PromptCAD's provider-neutral messages -> Ollama /api/chat messages."""
+    """VibeShaper's provider-neutral messages -> Ollama /api/chat messages."""
     out = []
     for m in messages:
         if m.get('role') == 'tool':
@@ -104,7 +104,7 @@ class OllamaProvider(BaseProvider):
                                      dict(_UA, **{'Content-Type': 'application/json'}))
 
         def retry_without_thinking():
-            log(f"PromptCAD: model '{model}' does not support thinking, retrying without it")
+            log(f"VibeShaper: model '{model}' does not support thinking, retrying without it")
             return self.generate(model, messages, values, GenerateOptions(False, opts.response_schema, opts.tools),
                                  on_chunk, stop_event, on_open, log)
 
@@ -174,5 +174,5 @@ class OllamaProvider(BaseProvider):
             raise
 
         res_text = ''.join(out)
-        log(f'PromptCAD: got {len(res_text)} chars from Ollama (thinking {thinking} chars, {len(calls)} tool calls)')
+        log(f'VibeShaper: got {len(res_text)} chars from Ollama (thinking {thinking} chars, {len(calls)} tool calls)')
         return Reply(res_text, calls) if calls else res_text

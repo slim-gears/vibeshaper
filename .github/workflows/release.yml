@@ -45,22 +45,22 @@ jobs:
         run: |
           mkdir -p build dist
           # Only committed files, minus those marked export-ignore in .gitattributes
-          git archive --format=tar --prefix=PromptCAD/ HEAD | tar -x -C build
+          git archive --format=tar --prefix=VibeShaper/ HEAD | tar -x -C build
           python - <<'PY'
           import json, os, pathlib
-          p = pathlib.Path('build/PromptCAD/PromptCAD.manifest')
+          p = pathlib.Path('build/VibeShaper/VibeShaper.manifest')
           m = json.loads(p.read_text(encoding='utf-8'))
           m['version'] = os.environ['VERSION']
           p.write_text(json.dumps(m, indent=2) + '\n', encoding='utf-8')
           PY
-          (cd build && zip -qr "../dist/PromptCAD-$VERSION.zip" PromptCAD)
-          unzip -l "dist/PromptCAD-$VERSION.zip"
+          (cd build && zip -qr "../dist/VibeShaper-$VERSION.zip" VibeShaper)
+          unzip -l "dist/VibeShaper-$VERSION.zip"
 
       - name: Keep the build with this run
         uses: actions/upload-artifact@v4
         with:
-          name: PromptCAD-${{ steps.version.outputs.version }}
-          path: build/  # downloads as a zip holding the PromptCAD folder
+          name: VibeShaper-${{ steps.version.outputs.version }}
+          path: build/  # downloads as a zip holding the VibeShaper folder
 
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -77,5 +77,5 @@ jobs:
           flags=()
           [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
           if [[ -s notes.md ]]; then flags+=(--notes-file notes.md); else flags+=(--generate-notes); fi
-          gh release create "$GITHUB_REF_NAME" "dist/PromptCAD-$VERSION.zip" \
-            --title "PromptCAD $VERSION" "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" "dist/VibeShaper-$VERSION.zip" \
+            --title "VibeShaper $VERSION" "${flags[@]}"

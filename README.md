@@ -1,18 +1,20 @@
-# PromptCAD
+# VibeShaper
 
-[![Tests](https://github.com/slim-gears/promptcad/actions/workflows/test.yml/badge.svg)](https://github.com/slim-gears/promptcad/actions/workflows/test.yml)
-[![Release](https://img.shields.io/github/v/release/slim-gears/promptcad?include_prereleases)](https://github.com/slim-gears/promptcad/releases)
+[![Tests](https://github.com/slim-gears/vibeshaper/actions/workflows/test.yml/badge.svg)](https://github.com/slim-gears/vibeshaper/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/slim-gears/vibeshaper?include_prereleases)](https://github.com/slim-gears/vibeshaper/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Prompt to 100% Parametric CAD History in Autodesk Fusion 360**
 
-![PromptCAD building a flanged pipe elbow from a prompt in Fusion 360](docs/demo.gif)
+![VibeShaper building a flanged pipe elbow from a prompt in Fusion 360](docs/demo.gif)
 
 <sub>*"A 90-degree pipe elbow with 30mm outer diameter, 3mm wall, swept over an 80mm radius, with an 80mm round mounting flange with 6 bolt holes on a 60mm bolt circle."*</sub>
 
-PromptCAD is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (such as Google Gemini).
+VibeShaper is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (such as Google Gemini).
 
-Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, PromptCAD creates **real CAD features** in the Fusion 360 timeline: sketches, parametric dimensions, extrusions, revolves, sweeps, coils, fillets, chamfers, and user parameters you can edit anytime under `Modify > Change Parameters`.
+*VibeShaper was called PromptCAD up to version 0.2.0.*
+
+Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, VibeShaper creates **real CAD features** in the Fusion 360 timeline: sketches, parametric dimensions, extrusions, revolves, sweeps, coils, fillets, chamfers, and user parameters you can edit anytime under `Modify > Change Parameters`.
 
 ---
 
@@ -33,7 +35,7 @@ Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, Pro
 
 ## 🚀 Installation
 
-> PromptCAD is developed and tested on **Windows**. It should work on **macOS** too, but that hasn't been tested yet; reports are welcome.
+> VibeShaper is developed and tested on **Windows**. It should work on **macOS** too, but that hasn't been tested yet; reports are welcome.
 
 ### 1. Locate Fusion 360's Add-Ins Folder
 
@@ -48,18 +50,18 @@ Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, Pro
   ~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
   ```
 
-### 2. Download PromptCAD
+### 2. Download VibeShaper
 
-1. Download `PromptCAD-<version>.zip` from the [latest release](https://github.com/slim-gears/promptcad/releases/latest).
-2. Extract it into the `AddIns` folder. You should end up with `AddIns\PromptCAD\PromptCAD.py`.
+1. Download `VibeShaper-<version>.zip` from the [latest release](https://github.com/slim-gears/vibeshaper/releases/latest).
+2. Extract it into the `AddIns` folder. You should end up with `AddIns\VibeShaper\VibeShaper.py`.
 
-To update later, close Fusion, delete the old `PromptCAD` folder and extract the new one. Your settings and chats are kept: settings live in your user folder, and chats are saved in your designs.
+To update later, close Fusion, delete the old `VibeShaper` folder and extract the new one. Your settings and chats are kept: settings live in your user folder, and chats are saved in your designs.
 
-*Want the latest code instead?* Clone the repository into the `AddIns` folder; the folder must be named `PromptCAD`:
+*Want the latest code instead?* Clone the repository into the `AddIns` folder; the folder must be named `VibeShaper`:
 
 ```bash
 cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns"
-git clone https://github.com/slim-gears/promptcad.git PromptCAD
+git clone https://github.com/slim-gears/vibeshaper.git VibeShaper
 ```
 
 ### 3. Run in Fusion 360
@@ -67,9 +69,9 @@ git clone https://github.com/slim-gears/promptcad.git PromptCAD
 1. Launch Autodesk Fusion 360.
 2. Press **Shift + S** (or navigate to `Utilities` > `Add-Ins`).
 3. Select the **Add-Ins** tab.
-4. Locate **PromptCAD** in the list.
+4. Locate **VibeShaper** in the list.
 5. Click **Run** (check *Run on Startup* if you want it loaded automatically).
-6. A **PromptCAD** button will appear in the **Solid > Create** panel on your toolbar. Click it to open the chat panel (docked on the right).
+6. A **VibeShaper** button will appear in the **Solid > Create** panel on your toolbar. Click it to open the chat panel (docked on the right).
 
 ---
 
@@ -81,19 +83,19 @@ Two places, both saved automatically:
 - **Settings** (gear icon, or `Ctrl+,`): set up each provider once (server URL, API key, **Test connection**), and general options:
   - **Theme**: Match system, Light or Dark. Fusion doesn't tell add-ins which theme it uses, so pick the one that matches yours.
   - **New chats build into**: New component (default) or New body. Each chat can switch from the button under the message box.
-  - **Fix failed builds automatically**: how many times PromptCAD sends a build error back to the model for a corrected design (Off to 5; default 2).
+  - **Fix failed builds automatically**: how many times VibeShaper sends a build error back to the model for a corrected design (Off to 5; default 2).
 
 ### Where your settings and logs are kept
 
-PromptCAD keeps your settings (including API keys) and its logs in your user folder, not in the add-in folder, so updating or reinstalling the add-in never touches them:
+VibeShaper keeps your settings (including API keys) and its logs in your user folder, not in the add-in folder, so updating or reinstalling the add-in never touches them:
 
-* **Windows**: `%APPDATA%\PromptCAD`
-* **macOS**: `~/Library/Application Support/PromptCAD`
+* **Windows**: `%APPDATA%\VibeShaper`
+* **macOS**: `~/Library/Application Support/VibeShaper`
 
 | File | What it is |
 |---|---|
 | `settings.json` | Your settings. API keys are stored here as plain text; if you'd rather not, leave the key empty and set the provider's environment variable instead (e.g. `GEMINI_API_KEY`). |
-| `promptcad.log` | A full record of each request and reply, handy for bug reports. Kept under 5 MB (one older copy is kept as `promptcad.log.old`). |
+| `vibeshaper.log` | A full record of each request and reply, handy for bug reports. Kept under 5 MB (one older copy is kept as `vibeshaper.log.old`). |
 | `last_response.txt` | The model's most recent raw reply. |
 
 **Privacy**:
@@ -107,14 +109,14 @@ PromptCAD keeps your settings (including API keys) and its logs in your user fol
    # or for reasoning:
    ollama run qwen3.8:latest
    ```
-2. In PromptCAD:
+2. In VibeShaper:
    - Open **Settings → Ollama** and set **Ollama URL** (default `http://localhost:11434`). Click **Test connection**.
    - Pick your model from the model menu.
    - For models that can reason (e.g. `qwen3`), turn on **Think before answering** in the model menu.
 
 ### Using Google Gemini
 1. Obtain an API key from [Google AI Studio](https://aistudio.google.com).
-2. In PromptCAD:
+2. In VibeShaper:
    - Open **Settings → Google Gemini** and paste your **Gemini API key** (or export `GEMINI_API_KEY` in your system environment).
    - Pick a model from the model menu (e.g. `gemini-2.5-flash`).
 
@@ -122,7 +124,7 @@ PromptCAD keeps your settings (including API keys) and its logs in your user fol
 
 ## 💬 Using the Chat Panel
 
-* **Start**: describe a part, or click one of the examples. PromptCAD builds it as **v1** in a timeline group named `PromptCAD · <title> · v1`.
+* **Start**: describe a part, or click one of the examples. VibeShaper builds it as **v1** in a timeline group named `VibeShaper · <title> · v1`.
 * **Refine**: reply with a change. The model gets the whole conversation and returns the complete updated design, which **replaces** the previous version.
 * **Where it's built**: the button under the message box chooses, per chat:
   * **New component** (default): the chat gets its own component. New versions replace what's inside it, so its position, joints and appearance survive regenerating, and the design's cuts only touch its own bodies.
@@ -137,7 +139,7 @@ PromptCAD keeps your settings (including API keys) and its logs in your user fol
 * **Parameters**: expand **Parameters** above the message box and edit a value; Fusion updates immediately. The model is told about manual changes with your next message.
 * **Several parts**: **+** starts a new chat (a new part alongside the others); the title menu switches between chats in this design.
 * **Delete a chat**: in the title menu, point at a chat and click the trash icon. This removes the conversation and its versions from the design; the parts it built stay in your timeline as ordinary features.
-* **Your own features**: if you added features after a PromptCAD part, you're asked before it's replaced.
+* **Your own features**: if you added features after a VibeShaper part, you're asked before it's replaced.
 * **Keys**: `Enter` send · `Shift+Enter` new line · `Esc` stop · `Ctrl+Shift+O` new chat.
 
 To work on the panel's look without Fusion, serve the `palette/` folder (e.g. `python -m http.server --directory palette`) and open `index.html?mock&demo`; it runs against a built-in mock back end.
@@ -146,7 +148,7 @@ To work on the panel's look without Fusion, serve the `palette/` folder (e.g. `p
 
 ## 💡 Example Prompts
 
-Paste prompts directly into PromptCAD:
+Paste prompts directly into VibeShaper:
 
 * **Mounting Bracket**:
   > *"A heavy-duty mounting bracket with a 50x80mm base, 5mm thickness, 4 corner bolt holes of 6mm diameter, and a central vertical lug with a 12mm hole."*
@@ -164,7 +166,7 @@ Paste prompts directly into PromptCAD:
 
 ## 🔌 Adding Custom Providers
 
-PromptCAD uses a pluggable architecture: everything about a provider lives in its plugin, and the rest of PromptCAD doesn't know which providers exist. To add one (e.g. OpenAI, Anthropic, Groq, LM Studio):
+VibeShaper uses a pluggable architecture: everything about a provider lives in its plugin, and the rest of VibeShaper doesn't know which providers exist. To add one (e.g. OpenAI, Anthropic, Groq, LM Studio):
 
 1. Create a new file in `providers/` (e.g., `providers/openai.py`).
 2. Subclass `BaseProvider`:
@@ -197,11 +199,11 @@ PromptCAD uses a pluggable architecture: everything about a provider lives in it
            ...
            return response_text  # or Reply(text, [ToolCall(id, name, arguments), ...]) when it called tools
    ```
-3. PromptCAD discovers it automatically: it gets its own page under **Settings** (built from `get_settings_schema()`), and its models show up in the model menu once it's set up.
+3. VibeShaper discovers it automatically: it gets its own page under **Settings** (built from `get_settings_schema()`), and its models show up in the model menu once it's set up.
 
-A provider only ever receives its own `values` as a plain dictionary. Where and how they're saved is up to PromptCAD.
+A provider only ever receives its own `values` as a plain dictionary. Where and how they're saved is up to VibeShaper.
 
-Messages are plain dictionaries in one format for all providers (see `providers/base.py`); a provider converts them to its API's format, including assistant messages with `tool_calls` and `tool` results. Anything the API needs back with a tool call later (such as a signature) goes in `ToolCall.extra`, which PromptCAD stores and returns untouched.
+Messages are plain dictionaries in one format for all providers (see `providers/base.py`); a provider converts them to its API's format, including assistant messages with `tool_calls` and `tool` results. Anything the API needs back with a tool call later (such as a signature) goes in `ToolCall.extra`, which VibeShaper stores and returns untouched.
 
 To try a provider without Fusion:
 
@@ -211,7 +213,7 @@ python llm.py --provider ollama --model qwen3:8b --set url=http://localhost:1143
 
 ### Adding Tools
 
-The tools the model can call are plug-ins too, in the `tools/` folder. The current design inspection tools are one of them (`tools/design.py`), and PromptCAD itself doesn't know about any particular tool.
+The tools the model can call are plug-ins too, in the `tools/` folder. The current design inspection tools are one of them (`tools/design.py`), and VibeShaper itself doesn't know about any particular tool.
 
 1. Create a file in `tools/` (e.g. `tools/my_tools.py`).
 2. Subclass `BaseToolkit`:
@@ -230,7 +232,7 @@ The tools the model can call are plug-ins too, in the `tools/` folder. The curre
 
        def run(self, name, args, ctx):
            # ctx.app, ctx.design: Fusion (always called on the main thread)
-           # ctx.state: this toolkit's own data for the document, saved by PromptCAD
+           # ctx.state: this toolkit's own data for the document, saved by VibeShaper
            ...
            return {'holes': 4}      # raise ToolError('...') for problems the model should read
 
@@ -240,13 +242,13 @@ The tools the model can call are plug-ins too, in the `tools/` folder. The curre
        def summary(self, ctx):
            return ''              # optional: text for models that can't call tools
    ```
-3. PromptCAD discovers it automatically and offers its tools to every model that supports tool calling and has the capabilities in `needs`. If two toolkits use the same tool name, the one listed first (lower `order`) keeps it.
+3. VibeShaper discovers it automatically and offers its tools to every model that supports tool calling and has the capabilities in `needs`. If two toolkits use the same tool name, the one listed first (lower `order`) keeps it.
 
 ---
 
 ## 🧪 Testing Outside Fusion 360
 
-PromptCAD includes a test suite that runs on standard Python without requiring Fusion 360 to be open:
+VibeShaper includes a test suite that runs on standard Python without requiring Fusion 360 to be open:
 
 ```bash
 python test_dsl.py
@@ -264,10 +266,10 @@ Bug reports, providers, tools and fixes are welcome. See [CONTRIBUTING.md](CONTR
 
 ## 📄 License
 
-PromptCAD is licensed under the [MIT License](LICENSE).
+VibeShaper is licensed under the [MIT License](LICENSE).
 
 ---
 
 ## ⚠️ Disclaimer
 
-PromptCAD is an independent open-source add-in and is not affiliated with, endorsed by, or sponsored by Autodesk, Inc. or Ollama. Autodesk and Fusion 360 are registered trademarks of Autodesk, Inc.
+VibeShaper is an independent open-source add-in and is not affiliated with, endorsed by, or sponsored by Autodesk, Inc. or Ollama. Autodesk and Fusion 360 are registered trademarks of Autodesk, Inc.

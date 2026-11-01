@@ -5,7 +5,7 @@ import pathlib
 import tempfile
 
 # Settings and logs go to a throwaway folder, never the user's real ones
-os.environ['PROMPTCAD_HOME'] = tempfile.mkdtemp(prefix='promptcad-test-')
+os.environ['VIBESHAPER_HOME'] = tempfile.mkdtemp(prefix='vibeshaper-test-')
 
 from dsl import validate
 
@@ -191,7 +191,7 @@ assert [(p.order, p.name) for p in all_provs] == sorted((p.order, p.name) for p 
 
 # The core knows no provider: no provider id or provider-specific setting key appears in core files
 _HERE = pathlib.Path(__file__).parent
-_core_py = ('PromptCAD.py', 'llm.py', 'chat.py', 'dsl.py', 'providers/__init__.py', 'providers/base.py',
+_core_py = ('VibeShaper.py', 'llm.py', 'chat.py', 'dsl.py', 'providers/__init__.py', 'providers/base.py',
             'tools/__init__.py', 'tools/base.py')
 _panel = (_HERE / 'palette/app.js').read_text(encoding='utf-8')
 _panel = _panel[:_panel.index('// MockBackend:')]  # the browser-preview mock may use sample providers
@@ -206,7 +206,7 @@ for core_file, src in _core_src.items():
         assert key not in src, f'{core_file} knows the provider setting {key!r}'
 
 # The version isn't written by hand: the build works it out from git tags and writes it into the manifest
-assert json.loads((_HERE / 'PromptCAD.manifest').read_text(encoding='utf-8'))['version'] == '0.0.0-dev'
+assert json.loads((_HERE / 'VibeShaper.manifest').read_text(encoding='utf-8'))['version'] == '0.0.0-dev'
 
 # Settings values are cleaned against the provider's own field list
 _schema = [SettingDef('url', 'URL', 'string', 'http://x', required=True, refreshes_models=True),
@@ -1134,12 +1134,12 @@ except Exception as e:
     assert 'DSL must be a JSON object' not in str(e)
 
 # Test the add-in's worker thread hands provider + settings to llm.generate correctly.
-# Loads PromptCAD.py as a package with a stub Fusion API and a fake provider.
+# Loads VibeShaper.py as a package with a stub Fusion API and a fake provider.
 import importlib
 import tempfile
 
 
-def _load_addin_with_stub_fusion(pkg_name='promptcad_addin', app_factory=None):
+def _load_addin_with_stub_fusion(pkg_name='vibeshaper_addin', app_factory=None):
     fired = []
     fired_event = threading.Event()
 
@@ -1178,7 +1178,7 @@ def _load_addin_with_stub_fusion(pkg_name='promptcad_addin', app_factory=None):
         pkg = types.ModuleType(pkg_name)
         pkg.__path__ = [str(here)]
         sys.modules[pkg_name] = pkg
-        addin = importlib.import_module(pkg_name + '.PromptCAD')
+        addin = importlib.import_module(pkg_name + '.VibeShaper')
     finally:
         for k, v in saved.items():
             if v is None:
@@ -1190,7 +1190,7 @@ def _load_addin_with_stub_fusion(pkg_name='promptcad_addin', app_factory=None):
 
 addin, fired, fired_event, _ = _load_addin_with_stub_fusion()
 tmp_log_dir = pathlib.Path(tempfile.mkdtemp())
-addin.llm.LOG_FILE = tmp_log_dir / 'promptcad.log'
+addin.llm.LOG_FILE = tmp_log_dir / 'vibeshaper.log'
 addin.llm.LAST_RESPONSE_FILE = tmp_log_dir / 'last_response.txt'
 
 seen_by_provider = {}
@@ -1327,15 +1327,15 @@ assert addin.toolbox.get_all_toolkits() and not any(k.prompt == 'STALE' for k in
 
 # ----- User files live outside the add-in folder -----
 import userdata
-_home = pathlib.Path(os.environ['PROMPTCAD_HOME'])
+_home = pathlib.Path(os.environ['VIBESHAPER_HOME'])
 assert addin.userdata.folder() == _home != here and llm.LOG_FILE.parent == _home
-with unittest.mock.patch.dict(os.environ, {'PROMPTCAD_HOME': '', 'APPDATA': r'C:\U\AppData\Roaming'}), \
+with unittest.mock.patch.dict(os.environ, {'VIBESHAPER_HOME': '', 'APPDATA': r'C:\U\AppData\Roaming'}), \
         unittest.mock.patch.object(userdata.sys, 'platform', 'win32'):
-    assert userdata.folder() == pathlib.Path(r'C:\U\AppData\Roaming') / 'PromptCAD'
-with unittest.mock.patch.dict(os.environ, {'PROMPTCAD_HOME': ''}), unittest.mock.patch.object(userdata.sys, 'platform', 'darwin'):
-    assert userdata.folder() == pathlib.Path.home() / 'Library' / 'Application Support' / 'PromptCAD'
-with unittest.mock.patch.dict(os.environ, {'PROMPTCAD_HOME': '', 'XDG_CONFIG_HOME': '/x'}),         unittest.mock.patch.object(userdata.sys, 'platform', 'linux'):
-    assert userdata.folder() == pathlib.Path('/x') / 'promptcad'
+    assert userdata.folder() == pathlib.Path(r'C:\U\AppData\Roaming') / 'VibeShaper'
+with unittest.mock.patch.dict(os.environ, {'VIBESHAPER_HOME': ''}), unittest.mock.patch.object(userdata.sys, 'platform', 'darwin'):
+    assert userdata.folder() == pathlib.Path.home() / 'Library' / 'Application Support' / 'VibeShaper'
+with unittest.mock.patch.dict(os.environ, {'VIBESHAPER_HOME': '', 'XDG_CONFIG_HOME': '/x'}),         unittest.mock.patch.object(userdata.sys, 'platform', 'linux'):
+    assert userdata.folder() == pathlib.Path('/x') / 'vibeshaper'
 
 # ----- Chat sessions -----
 import chat as chat_mod
@@ -1557,37 +1557,37 @@ class _Design:
 
 
 des = _Design()
-des.timeline.add_group('PromptCAD · Cube · v1 [abc]', 3)
-des.timeline.add_group('PromptCAD · Other part · v1 [zzz]', 2)
-assert dsl.user_features_after(des, 'PromptCAD · Cube · v1 [abc]') == 0  # other PromptCAD parts don't count
+des.timeline.add_group('VibeShaper · Cube · v1 [abc]', 3)
+des.timeline.add_group('VibeShaper · Other part · v1 [zzz]', 2)
+assert dsl.user_features_after(des, 'VibeShaper · Cube · v1 [abc]') == 0  # other VibeShaper parts don't count
 des.timeline.add_loose(2)  # user's own features after it
-assert dsl.user_features_after(des, 'PromptCAD · Cube · v1 [abc]') == 2
+assert dsl.user_features_after(des, 'VibeShaper · Cube · v1 [abc]') == 2
 assert dsl.user_features_after(des, 'missing') == 0
 
 for name, used in (('cube', False), ('hole', True)):
     des.userParameters.d[name] = _Param(des.userParameters.d, name, in_use=used)
-assert dsl.delete_version(des, 'PromptCAD · Cube · v1 [abc]', ['cube', 'hole', 'gone']) == 'deleted'
-assert [g.name for g in des.timeline.groups] == ['PromptCAD · Other part · v1 [zzz]']
+assert dsl.delete_version(des, 'VibeShaper · Cube · v1 [abc]', ['cube', 'hole', 'gone']) == 'deleted'
+assert [g.name for g in des.timeline.groups] == ['VibeShaper · Other part · v1 [zzz]']
 assert des.timeline.count == 4
 assert list(des.userParameters.d) == ['hole']  # in-use parameter is left alone
-assert dsl.delete_version(des, 'PromptCAD · Cube · v1 [abc]', []) is False  # already gone: build fresh
+assert dsl.delete_version(des, 'VibeShaper · Cube · v1 [abc]', []) is False  # already gone: build fresh
 
 # Fusion refuses to delete the whole group: delete its features one by one, newest first
 des = _Design()
-g = des.timeline.add_group('PromptCAD · Spring · v1 [s]', 3)
-other = des.timeline.add_group('PromptCAD · Other · v1 [o]', 1)
+g = des.timeline.add_group('VibeShaper · Spring · v1 [s]', 3)
+other = des.timeline.add_group('VibeShaper · Other · v1 [o]', 1)
 g.refuse_delete = True
-assert dsl.delete_version(des, 'PromptCAD · Spring · v1 [s]', []) == 'deleted'
+assert dsl.delete_version(des, 'VibeShaper · Spring · v1 [s]', []) == 'deleted'
 assert des.timeline.moved_to_end
-assert [x.name for x in des.timeline.groups] == ['PromptCAD · Other · v1 [o]'] and des.timeline.count == 1
+assert [x.name for x in des.timeline.groups] == ['VibeShaper · Other · v1 [o]'] and des.timeline.count == 1
 
 # Nothing can be deleted: suppress the old version instead, so the new one can still be built
 des = _Design()
-g = des.timeline.add_group('PromptCAD · Spring · v1 [s]', 2)
+g = des.timeline.add_group('VibeShaper · Spring · v1 [s]', 2)
 g.refuse_delete = True
 for it in g._items:
     it.refuse = True
-assert dsl.delete_version(des, 'PromptCAD · Spring · v1 [s]', []) == 'suppressed'
+assert dsl.delete_version(des, 'VibeShaper · Spring · v1 [s]', []) == 'suppressed'
 assert g.isSuppressed is True
 
 # ----- Where a build goes: the chat's own component -----
@@ -1781,7 +1781,7 @@ class _Harness:
 
 import time
 H = _Harness()
-e2e, _, _, e2e_app = _load_addin_with_stub_fusion('promptcad_e2e', H.make_app)
+e2e, _, _, e2e_app = _load_addin_with_stub_fusion('vibeshaper_e2e', H.make_app)
 H.addin = e2e
 H.design = H.Design()
 e2e_app.activeProduct = H.design
@@ -1798,7 +1798,7 @@ e2e._save_settings = lambda s: None
 BUILT_INTO = []  # component name (None = root) per execute
 
 
-def _fake_execute(design, d, group_name='PromptCAD', comp=None):
+def _fake_execute(design, d, group_name='VibeShaper', comp=None):
     BUILT_INTO.append(comp.name if comp else None)
     if d.get('name') == 'bad':
         raise ValueError('timeline[1] (extrude): sketch has no closed profiles')
@@ -1856,7 +1856,7 @@ H.pump(H.idle)
 t = H.last_ai()
 assert t['status'] == 'done' and t['version'] == 1 and t['replaced'] is None, t
 assert 'pondering' in t['thought']
-assert len(groups()) == 1 and groups()[0].startswith('PromptCAD · a 40 mm cube · v1')
+assert len(groups()) == 1 and groups()[0].startswith('VibeShaper · a 40 mm cube · v1')
 assert H.design.userParameters.d['cube_w'].expression == '40 mm'
 assert SP.seen[-1][0]['role'] == 'system' and SP.seen[-1][-1]['content'] == 'a 40 mm cube'
 
@@ -1952,7 +1952,7 @@ assert H.last_ai()['status'] == 'stopped'
 
 # 10. Chats are saved in the design and come back after reopening it
 H.pump(lambda: True)
-saved_json = H.design.attributes.itemByName('PromptCAD', 'chats').value
+saved_json = H.design.attributes.itemByName('VibeShaper', 'chats').value
 reloaded = chat_mod.ChatStore.from_json(saved_json)
 assert reloaded.active().title == 'a 40 mm cube' and len(reloaded.active().versions) == 7
 assert 'api_key' not in saved_json
@@ -2157,7 +2157,7 @@ assert e2e._store().get(_gone) is None and _deleted_versions == []
 _last_chat = [e for e in H.panel if e.get('type') == 'chat'][-1]
 assert _gone not in [x['id'] for x in _last_chat['chats']]
 assert {'type': 'toast', 'text': 'Chat deleted'} in H.panel[-3:]
-assert _gone not in H.design.attributes.itemByName('PromptCAD', 'chats').value
+assert _gone not in H.design.attributes.itemByName('VibeShaper', 'chats').value
 assert H.chat_view()['id'] == (_shown if _shown != _gone else e2e._store().active().id)
 H.act('delete_chat', id='no-such-chat')  # nothing happens
 e2e.dsl.delete_version = _real_delete_version

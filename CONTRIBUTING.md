@@ -1,21 +1,21 @@
-# Contributing to PromptCAD
+# Contributing to VibeShaper
 
 Thanks for helping! Bug reports, new providers, new tools and fixes are all welcome.
 
 ## Reporting a bug
 
-Open an [issue](https://github.com/slim-gears/promptcad/issues/new/choose) and include:
+Open an [issue](https://github.com/slim-gears/vibeshaper/issues/new/choose) and include:
 
 - what you asked for, and what happened instead;
 - the provider and model you used;
 - your Fusion version and operating system;
-- the relevant part of `promptcad.log` (in `%APPDATA%\PromptCAD` on Windows, `~/Library/Application Support/PromptCAD` on macOS). It contains your prompts and the model's replies, so check it before you share it.
+- the relevant part of `vibeshaper.log` (in `%APPDATA%\VibeShaper` on Windows, `~/Library/Application Support/VibeShaper` on macOS). It contains your prompts and the model's replies, so check it before you share it.
 
 ## Setting up
 
-1. Clone the repository into Fusion's `AddIns` folder (see the [README](README.md#-installation)). The folder must be named `PromptCAD`.
-2. In Fusion, open **Utilities → Add-Ins**, select PromptCAD and click **Run**.
-3. After changing code, click **Stop** and then **Run** again. PromptCAD reloads its modules, providers and tools, so you don't need to restart Fusion.
+1. Clone the repository into Fusion's `AddIns` folder (see the [README](README.md#-installation)). The folder must be named `VibeShaper`.
+2. In Fusion, open **Utilities → Add-Ins**, select VibeShaper and click **Run**.
+3. After changing code, click **Stop** and then **Run** again. VibeShaper reloads its modules, providers and tools, so you don't need to restart Fusion.
 
 ## Running the tests
 
@@ -43,7 +43,7 @@ Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake bac
 
 | Path | What it does |
 |---|---|
-| `PromptCAD.py` | The add-in: Fusion commands, the panel bridge, settings, running builds and tools |
+| `VibeShaper.py` | The add-in: Fusion commands, the panel bridge, settings, running builds and tools |
 | `llm.py` | Talking to the model: system prompt, retries, the tool loop, logging |
 | `dsl.py` | Validating the JSON design and building it in Fusion ([DSL_SPEC.md](DSL_SPEC.md)) |
 | `chat.py` | Chats, versions and saving them in the document |
@@ -54,7 +54,7 @@ Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake bac
 
 ### The one rule: the core knows no plugin
 
-Everything specific to a provider or a tool lives in its plugin. The core (`PromptCAD.py`, `llm.py`, `chat.py`, `dsl.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool or a toolkit. A test enforces this.
+Everything specific to a provider or a tool lives in its plugin. The core (`VibeShaper.py`, `llm.py`, `chat.py`, `dsl.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool or a toolkit. A test enforces this.
 
 If a feature differs per provider or per model (thinking, images, tools), add it to the plugin interface (`providers/base.py`, `tools/base.py`) and let plugins report it, rather than checking for a particular provider in the core.
 
@@ -78,6 +78,6 @@ The version is never written by hand. It comes from git tags, and the build writ
    git tag v0.3.0
    git push origin v0.3.0
    ```
-3. GitHub Actions runs the tests, builds `PromptCAD-0.3.0.zip` with version 0.3.0 in its manifest, and publishes a Release with the changelog section as its notes. A tag like `v0.3.0-beta.1` becomes a pre-release.
+3. GitHub Actions runs the tests, builds `VibeShaper-0.3.0.zip` with version 0.3.0 in its manifest, and publishes a Release with the changelog section as its notes. A tag like `v0.3.0-beta.1` becomes a pre-release.
 
 Every push to `main` also produces a test build, downloadable under **Artifacts** on that run's page. Its version says how far it is past the last release, e.g. `0.3.0+dev.4.1a2b3c4` (4 commits after v0.3.0).

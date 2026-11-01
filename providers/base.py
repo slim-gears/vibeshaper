@@ -2,7 +2,7 @@
 
 A provider describes its own settings (fields), lists its models with what each can do, and
 generates text. It only ever sees its own values as a plain dict: where and how they are
-stored is PromptCAD's business, not the provider's.
+stored is VibeShaper's business, not the provider's.
 """
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -59,7 +59,7 @@ class ToolDef:
 @dataclass
 class ToolCall:
     """A call the model made. `extra` is for the provider's own data that must be sent back with
-    the call in later requests (e.g. signatures); PromptCAD stores it and never reads it."""
+    the call in later requests (e.g. signatures); VibeShaper stores it and never reads it."""
     id: str
     name: str
     arguments: Dict[str, Any] = field(default_factory=dict)
@@ -78,7 +78,7 @@ class Reply:
 
 @dataclass
 class GenerateOptions:
-    """Choices PromptCAD makes for a request. Providers ignore what they can't do."""
+    """Choices VibeShaper makes for a request. Providers ignore what they can't do."""
     think: bool = False
     response_schema: Optional[Dict[str, Any]] = None  # JSON schema the reply must follow, if supported
     tools: Optional[List[ToolDef]] = None  # functions the model may call (only for models listed with tools=True)
@@ -154,6 +154,6 @@ class BaseProvider:
         """Stream a reply to `messages`. Return its full text, or a Reply when the model called tools.
 
         on_chunk(kind, text) with kind 'thought' or 'text'; stop when stop_event is set
-        (raise InterruptedError); on_open(response) lets PromptCAD close the stream early.
-        With options.tools, offer them to the model; PromptCAD runs the calls and asks again."""
+        (raise InterruptedError); on_open(response) lets VibeShaper close the stream early.
+        With options.tools, offer them to the model; VibeShaper runs the calls and asks again."""
         raise NotImplementedError

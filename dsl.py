@@ -636,7 +636,7 @@ _find_group = find_group
 
 
 def user_features_after(design, group_name):
-    """Count timeline items after `group_name` that PromptCAD didn't make (they may depend on it).
+    """Count timeline items after `group_name` that VibeShaper didn't make (they may depend on it).
 
     Returns 0 when the group is missing or the timeline can't be inspected.
     """
@@ -652,7 +652,7 @@ def user_features_after(design, group_name):
             if obj.isGroup or obj.index <= last_index:
                 continue
             parent = obj.parentGroup
-            if parent and str(parent.name).startswith('PromptCAD'):
+            if parent and str(parent.name).startswith('VibeShaper'):
                 continue
             n += 1
         return n
@@ -775,7 +775,7 @@ def delete_version(design, group_name, param_names=()):
     return found
 
 
-def execute(design, d, group_name='PromptCAD', comp=None):
+def execute(design, d, group_name='VibeShaper', comp=None):
     """Build parameters + timeline in `design`, grouped as one timeline group.
 
     comp: component to build in (default: the root component).
