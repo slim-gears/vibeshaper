@@ -4,6 +4,8 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Changed
 - **Renamed from PromptCAD to VibeShaper.** The add-in folder, its files, the settings folder (`%APPDATA%\VibeShaper`, `~/Library/Application Support/VibeShaper`) and the timeline group names all use the new name. To keep your settings, move them over from the old `PromptCAD` folder. Chats saved in designs by PromptCAD aren't shown.
 
@@ -24,5 +26,6 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/slim-gears/vibeshaper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/slim-gears/vibeshaper/releases/tag/v0.2.0
