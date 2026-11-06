@@ -11,11 +11,42 @@ Open an [issue](https://github.com/slim-gears/vibeshaper/issues/new/choose) and 
 - your Fusion version and operating system;
 - the relevant part of `vibeshaper.log` (in `%APPDATA%\VibeShaper` on Windows, `~/Library/Application Support/VibeShaper` on macOS). It contains your prompts and the model's replies, so check it before you share it.
 
-## Setting up
+## Development environment
 
-1. Clone the repository into Fusion's `AddIns` folder (see the [README](README.md#-installation)). The folder must be named `VibeShaper`.
-2. In Fusion, open **Utilities → Add-Ins**, select VibeShaper and click **Run**.
-3. After changing code, click **Stop** and then **Run** again. VibeShaper reloads its modules, providers and tools, so you don't need to restart Fusion.
+### What you need
+
+| | Needed for |
+|---|---|
+| [Autodesk Fusion](https://www.autodesk.com/products/fusion-360) on Windows or macOS | Running the add-in |
+| git | Getting the code |
+| Python 3.11 or newer | The tests and the panel preview only. The add-in itself runs on Fusion's own Python. If you have no Python installed, Fusion's works (see [Running the tests](#running-the-tests)). |
+| A model: [Ollama](https://ollama.com) with a model that supports tools, or a [Gemini API key](https://aistudio.google.com) (it has a free tier) | Trying anything in Fusion |
+| A web browser | Working on the chat panel |
+| [Visual Studio Code](https://code.visualstudio.com) with the Python extension | Optional, for stepping through the add-in in Fusion |
+
+The add-in uses only Python's standard library, so there is nothing to install with pip.
+
+### Getting the add-in running
+
+1. Clone the repository. The folder must be named `VibeShaper`, because Fusion expects the folder, `VibeShaper.py` and `VibeShaper.manifest` to share a name.
+   ```bash
+   git clone https://github.com/slim-gears/vibeshaper.git VibeShaper
+   ```
+   You can clone it anywhere. Either put it in Fusion's `AddIns` folder (see the [README](README.md#-installation)), or keep it where you like and add it in Fusion with the **+** button in the Add-Ins dialog.
+2. In Fusion, open **Utilities → Add-Ins**, select VibeShaper and click **Run**. A VibeShaper button appears under **Solid → Create**.
+3. Set up a model: see [Using Local Ollama](README.md#using-local-ollama-recommended-for-privacy) or [Using Google Gemini](README.md#using-google-gemini).
+4. After changing code, click **Stop** and then **Run** again. VibeShaper reloads its modules, providers and tools, so you don't need to restart Fusion. Fusion reads the manifest only at startup, though, so restart it if you change that.
+
+### Finding out what happened
+
+- **Text Commands** (in Fusion, **File → View → Show Text Commands**): short messages from the add-in, including errors with tracebacks.
+- **`vibeshaper.log`**, in your settings folder (`%APPDATA%\VibeShaper` on Windows, `~/Library/Application Support/VibeShaper` on macOS): every request to the model and its full reply.
+- **`last_response.txt`**, in the same folder: the model's most recent reply on its own.
+- **Debugging**: in the Add-Ins dialog, choose **Debug** instead of **Run**. Fusion opens Visual Studio Code attached to the add-in, where you can set breakpoints.
+
+### What the tests can't check
+
+The tests run against a simulated Fusion, so they cover the logic but not real geometry. After changing how designs are built (`dsl.py`) or anything that calls the Fusion API, try it in Fusion too. The designs in `examples/` make a quick check: paste one's JSON into the chat and it is built directly, without a model.
 
 ## Running the tests
 
