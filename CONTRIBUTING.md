@@ -98,6 +98,7 @@ If a feature differs per provider or per model (thinking, images, tools), add it
 - Make sure `python test_dsl.py` passes.
 - Add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md) for anything users will notice.
 - Code comments and messages should be short and plain.
+- Using a coding agent? It should follow [AGENTS.md](AGENTS.md); most agents read it automatically, and `CLAUDE.md` and `GEMINI.md` point to it.
 
 ## Releasing (maintainers)
 
