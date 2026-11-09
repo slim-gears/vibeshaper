@@ -22,7 +22,7 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from . import chat, dsl, llm, providers, userdata
+from . import chat, dsl, llm, providers, shapes, userdata
 from . import tools as toolbox
 
 def _reload_plugins(package):
@@ -39,6 +39,7 @@ def _reload_providers():
     _reload_plugins(providers)
 
 
+_reload_plugins(shapes)  # before dsl, which reads the shapes when it loads
 importlib.reload(dsl)  # pick up edits on add-in Stop/Run without restarting Fusion
 importlib.reload(userdata)
 _reload_providers()

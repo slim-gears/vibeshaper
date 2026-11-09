@@ -4,6 +4,24 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+### Added
+- **Pick edges by the step that made them.** Fillets and chamfers take `"edges": {"feature": "screw_cut", "exclude": "pocket_cut"}` to change only the edges a named step created.
+- **Circular patterns around any point.** `circular_pattern` takes a `"center"`, so a part away from the origin (the second gear of a pair, say) is patterned around its own axis instead of the origin.
+- **Spur gears in one step.** `{"op": "spur_gear", "module": ..., "teeth": ...}` builds an involute gear (one arc per tooth flank, within a few hundredths of a millimetre) that follows its parameters, including module and tooth count, when they change in Fusion.
+- **Shape plugins** (`shapes/`): ready-made parts that expand into ordinary steps.
+- **Bolt holes in one step.** `bolt_hole` cuts clearance holes for M2 to M12 bolts, with an optional counterbore, countersink or hex nut trap, sized from ISO tables plus a printing tolerance.
+- **Vent grids.** `vent_grid` fills an area with round, hexagonal (honeycomb) or slot holes; the number of holes follows the area and hole size when they change.
+- **T-slot profiles.** `tslot_profile` builds a 2020, 2040, 3030, 4040 (and similar) aluminum extrusion with its real section: corner blocks with lips, diagonal spars, a core with a bore, T-shaped slots and hollows between cells. Its sketch draws 1/8 of the section (1/4 for a 2040 or longer) and mirrors it. Every size can be overridden.
+- **Grid patterns.** `linear_pattern` takes a second direction (`direction2`, `quantity2`, `distance2`).
+- **Pick edges in a sketch's plane.** Edge selectors take `"on": sketch_id`, e.g. to chamfer only the rim of a hole at the face it was sketched on.
+- **`profile` sketch entity**: a closed outline of lines and arcs (slots, rounded tabs).
+- **`mirror` sketch entity**: copies earlier entities across a line, tied by symmetry constraints, like Fusion's sketch Mirror. Symmetric outlines are drawn once in part and mirrored.
+- **`regular_polygon` sketch entity** (e.g. hex nut recesses), constrained like Fusion's polygon tool.
+
+### Fixed
+- Parameters such as `pitch_r * cos(20 deg)` are created as lengths, not angles.
+- **Sketches follow parameter changes.** Sketch geometry is no longer fixed in place. Rectangles, lines and polygons get the constraints and dimensions you'd add by hand, so editing a parameter (a wall thickness, say) moves the geometry.
+
 ## [0.3.0]
 
 ### Changed

@@ -868,7 +868,7 @@ inp = mock_shells.createInput(shell_col, False)
 assert inp == "mock_shell_input"
 
 # Test sketch constraint logic
-from dsl import _anchor, _draw
+from dsl import _draw
 
 class MockSKPt:
     def __init__(self, x=0, y=0):
@@ -1066,24 +1066,609 @@ _draw(sk3, circ_ent, dummy_ex, dummy_cm, dummy_pt)
 assert len(sk3.sketchDimensions.dims) >= 1
 assert any(c[0] == 'horizontal_points' for c in sk3.geometricConstraints.constraints)
 
-# Test 4: Post-draw sweep locks unconstrained curves and points
-if not sk3.isFullyConstrained:
-    for c in [sk3.sketchCurves.item(k) for k in range(sk3.sketchCurves.count)]:
-        if not c.isFullyConstrained: c.isFixed = True
-    for p in [sk3.sketchPoints.item(k) for k in range(sk3.sketchPoints.count)]:
-        if not p.isFullyConstrained: p.isFixed = True
+# Test 4: Sketches never fix geometry; a rectangle gets what Fusion's own tool gives it
+def _kinds(sk, kind):
+    return [c for c in sk.geometricConstraints.constraints if c[0] == kind]
 
-assert all(c.isFixed or c.isFullyConstrained for c in [sk3.sketchCurves.item(k) for k in range(sk3.sketchCurves.count)])
+def _dim_exprs(sk):
+    return [d[1].parameter.expression for d in sk.sketchDimensions.dims]
 
-# Test 5: Layer 1 Auto-perpendicularity on orthogonal polyline
+def _all_free(sk):
+    curves = [sk.sketchCurves.item(k) for k in range(sk.sketchCurves.count)]
+    points = [sk.sketchPoints.item(k) for k in range(sk.sketchPoints.count)]
+    ends = [p for c in curves for p in (getattr(c, 'startSketchPoint', None), getattr(c, 'endSketchPoint', None)) if p]
+    return not any(o.isFixed for o in curves + points + ends)
+
+assert len(_kinds(sk2, 'horizontal')) == 2 and len(_kinds(sk2, 'vertical')) == 2
+assert _kinds(sk2, 'midpoint') and _kinds(sk2, 'coincident')  # center on the diagonal, at the origin
+assert sorted(_dim_exprs(sk2)) == ['30 mm', '50 mm']
+assert not _kinds(sk2, 'perpendicular')  # H + V already make the corners square
+for _sk in (sk1, sk2, sk3):
+    assert _all_free(_sk)
+
+# Off-origin center: placed by one dimension per axis from the origin
+sk4 = MockSketchObj()
+_draw(sk4, {"type": "center_rectangle", "center": [20, 10], "width": 40, "height": 30}, dummy_ex, dummy_cm, dummy_pt)
+assert sorted(_dim_exprs(sk4)) == ['10 mm', '20 mm', '30', '40']
+assert _all_free(sk4)
+
+# On a plane whose first coordinate runs along the sketch's vertical axis, width goes vertical
+sk4s = MockSketchObj()
+_draw(sk4s, {"type": "center_rectangle", "center": [0, 0], "width": "50 mm", "height": "30 mm"},
+      dummy_ex, dummy_cm, lambda a, b: MockPoint3D(b, a, 0))
+by_orient = {d[2]: d[1].parameter.expression for d in sk4s.sketchDimensions.dims}
+assert by_orient[MockDimOrientations.VerticalDimensionOrientation] == '50 mm'
+assert by_orient[MockDimOrientations.HorizontalDimensionOrientation] == '30 mm'
+
+# Test 5: Orthogonal polylines get H/V and one length per segment, no redundant perpendicular
 sk5 = MockSketchObj()
-l_poly = {
-    "type": "polyline",
-    "points": [[0, 50], [0, 0], [50, 0]],
-    "closed": False
-}
-_draw(sk5, l_poly, dummy_ex, dummy_cm, dummy_pt)
-assert any(c[0] == 'perpendicular' for c in sk5.geometricConstraints.constraints)
+_draw(sk5, {"type": "polyline", "points": [[0, 50], [0, 0], [50, 0]], "closed": False},
+      dummy_ex, dummy_cm, dummy_pt)
+assert not _kinds(sk5, 'perpendicular')
+assert len(_kinds(sk5, 'horizontal')) == 1 and len(_kinds(sk5, 'vertical')) == 1
+assert len(_kinds(sk5, 'coincident')) == 1
+assert sorted(_dim_exprs(sk5)) == ['50 mm', '50 mm']
+assert _all_free(sk5)
+
+# A closed rectangle away from the origin: 2 side lengths + 2 distances from the origin, nothing doubled
+sk5b = MockSketchObj()
+_draw(sk5b, {"type": "polygon", "points": [[10, 10], [40, 10], [40, 30], [10, 30]]}, dummy_ex, dummy_cm, dummy_pt)
+assert len(_kinds(sk5b, 'horizontal')) == 2 and len(_kinds(sk5b, 'vertical')) == 2
+exprs5b = _dim_exprs(sk5b)
+assert len(exprs5b) == 4, exprs5b
+assert '(40 mm) - (10 mm)' in exprs5b and '(30 mm) - (10 mm)' in exprs5b
+assert exprs5b.count('10 mm') == 2
+
+# Distances are magnitudes: a negative coordinate is dimensioned as its negation
+from dsl import _span_ex
+assert _span_ex(dummy_ex, 0, 0.0, 'a', -1.0) == '-(a)'
+assert _span_ex(dummy_ex, 'a', 2.0, 'b', 1.0) == '(a) - (b)'
+
+# Regular polygon: construction circle, vertices on it, equal sides, one flat side, a diameter
+sk5c = MockSketchObj()
+_draw(sk5c, {"type": "regular_polygon", "id": "hex", "center": [0, 0], "sides": 6, "across_flats": "nut_af"},
+      dummy_ex, dummy_cm, dummy_pt, {})
+assert len(sk5c.sketchCurves.lines_list) == 6
+assert sk5c.sketchCurves.circles_list[0].isConstruction
+assert len(_kinds(sk5c, 'equal')) == 5
+assert len([c for c in _kinds(sk5c, 'coincident') if c[2] is sk5c.sketchCurves.circles_list[0]]) == 6
+assert len(_kinds(sk5c, 'horizontal')) == 1
+assert _dim_exprs(sk5c) == ['(nut_af) / cos(180 deg / 6)']
+assert _all_free(sk5c)
+
+# Test 5d: Edges picked by the step that made them, minus edges touching another step's faces
+class _FEdge:
+    def __init__(self, geo):
+        self.geometry, self.pointOnEdge, self.faces = geo, geo.startPoint, MockEdgeCollection([])
+
+class _FFace:
+    def __init__(self, edges):
+        self.edges = MockEdgeCollection(edges)
+        for e in edges:
+            e.faces = MockEdgeCollection(e.faces.edges + [self])
+
+class _Feat:
+    def __init__(self, faces, side=None):
+        self.faces = MockEdgeCollection(faces)
+        self.sideFaces = MockEdgeCollection(side if side is not None else faces)
+
+rim_out = _FEdge(MockLine3D(MockPoint3D(0, 0, 5), MockPoint3D(0, 0, 5)))
+rim_out.geometry.curveType = 2
+rim_in = _FEdge(MockLine3D(MockPoint3D(0, 0, 5), MockPoint3D(0, 0, 5)))
+rim_in.geometry.curveType = 2
+seam = _FEdge(MockLine3D(MockPoint3D(0, 0, 0), MockPoint3D(0, 0, 10)))
+bore = _FFace([rim_out, rim_in, seam])
+pocket_wall = _FFace([rim_in])
+feats = {'screw_cut': _Feat([bore]), 'pocket_cut': _Feat([pocket_wall])}
+any_body = MockBody([])
+assert _select_edges(any_body, {'feature': 'screw_cut'}, feats) == [rim_out, rim_in, seam]
+assert _select_edges(any_body, {'feature': 'screw_cut', 'type': 'circle', 'exclude': 'pocket_cut'}, feats) == [rim_out]
+try:
+    _select_edges(any_body, {'feature': 'nope'}, feats)
+    assert False, 'unknown feature should fail'
+except ValueError as err:
+    assert 'nope' in str(err)
+
+def _fails(d, words):
+    try:
+        validate(d)
+    except ValueError as err:
+        assert words in str(err), str(err)
+        return
+    assert False, f'expected failure: {words}'
+
+_sk = {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]}
+validate({"parameters": {}, "timeline": [_sk, {"op": "extrude", "sketch": "s", "distance": 5},
+          {"op": "chamfer", "distance": 1, "edges": {"feature": "s", "faces": "side", "type": "circle"}}]})
+_fails({"parameters": {}, "timeline": [_sk, {"op": "extrude", "id": "e", "sketch": "s", "distance": 5},
+        {"op": "chamfer", "distance": 1, "edges": {"feature": "e", "exclude": "ghost"}}]}, "'ghost'")
+_fails({"parameters": {}, "timeline": [_sk, {"op": "extrude", "id": "e", "sketch": "s", "distance": 5},
+        {"op": "fillet", "radius": 1, "edges": {"feature": "e", "colour": "red"}}]}, 'unknown edge selector keys')
+_poly = lambda **kw: {"parameters": {}, "timeline": [{"op": "sketch", "id": "p", "plane": "xy", "entities": [
+    dict({"type": "regular_polygon", "center": [0, 0]}, **kw)]}]}
+validate(_poly(sides=6, across_flats="8 mm"))
+_fails(_poly(sides=2, diameter=10), 'sides')
+_fails(_poly(sides=6, diameter=10, across_flats=8), 'either diameter')
+
+# Test 5e: A circular pattern around an off-origin center gets a parametric axis
+from dsl import _axis_through
+
+class _AxisRoot:
+    def __init__(self):
+        self.sketch_list, self.axis_inputs = [], []
+        root = self
+        class Planes:
+            def createInput(self):
+                return types.SimpleNamespace(setByOffset=lambda plane, v: None)
+            def add(self, inp):
+                return types.SimpleNamespace(isLightBulbOn=True)
+        class Sketches:
+            def add(self, plane):
+                sk = MockSketchObj()
+                sk.modelToSketchSpace = lambda p: MockPoint3D(p.x, p.y, p.z)
+                root.sketch_list.append(sk)
+                return sk
+        class Axes:
+            def createInput(self):
+                inp = types.SimpleNamespace()
+                inp.setByTwoPoints = lambda a, b: setattr(inp, 'points', (a, b))
+                root.axis_inputs.append(inp)
+                return inp
+            def add(self, inp):
+                return types.SimpleNamespace(points=inp.points, isLightBulbOn=True)
+        self.constructionPlanes, self.sketches, self.constructionAxes = Planes(), Sketches(), Axes()
+
+mock_core.ValueInput = types.SimpleNamespace(createByString=lambda v: v)
+_ar = _AxisRoot()
+_axis = _axis_through(_ar, 'XY', lambda a, b: (a, b, 0), ['center_dist', 0], 'gear2_axis', dummy_ex, lambda v: 4.0 if v == 'center_dist' else dummy_cm(v))
+assert len(_ar.sketch_list) == 2 and not _axis.isLightBulbOn
+for _sk, _p in zip(_ar.sketch_list, _axis.points):
+    assert _p in _sk.sketchPoints._pts and not _sk.isVisible
+    assert _dim_exprs(_sk) == ['center_dist']                       # x driven by the parameter
+    assert _kinds(_sk, 'horizontal_points')                         # y = 0: aligned with the origin
+    assert not _p.isFixed
+
+_pat = lambda **kw: {"parameters": {}, "timeline": [_sk_c, {"op": "extrude", "id": "t", "sketch": "s", "distance": 5},
+    dict({"op": "circular_pattern", "feature": "t", "quantity": 4}, **kw)]}
+_sk_c = {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "circle", "center": [40, 0], "diameter": 10}]}
+validate(_pat(center=["center_dist", 0]))
+_fails(_pat(center=[1, 2, 3]), 'center')
+
+# Test 5f: profile = lines and three-point arcs sharing corners, every point placed, nothing fixed
+class MockSKArc:
+    def __init__(self, a, b, mid=None):  # Fusion may start an arc at either end; start at b to test matching
+        self.startSketchPoint, self.endSketchPoint = MockSKPt(b.x, b.y), MockSKPt(a.x, a.y)
+        self.isFixed = False
+        self.geometry = types.SimpleNamespace(evaluator=types.SimpleNamespace(
+            getParameterExtents=lambda: (True, 0.0, 1.0), getPointAtParameter=lambda t: (True, mid)))
+
+def _add_arc(curves, a, mid, b):
+    arc = MockSKArc(a, b, mid)
+    curves.arcs_list.append(arc)
+    return arc
+
+MockSKCurves.sketchArcs = property(
+    lambda self: types.SimpleNamespace(addByThreePoints=lambda a, m, b: _add_arc(self, a, m, b)))
+
+sk5f = MockSketchObj()
+sk5f.sketchCurves.arcs_list = []
+_slot = {"type": "profile", "id": "slot", "start": [0, 0], "segments": [
+    {"to": [40, 0]}, {"to": [40, 20], "through": [50, 10]}, {"to": [0, 20]}, {"to": [0, 0], "through": [-10, 10]}]}
+_ents = {}
+_draw(sk5f, _slot, dummy_ex, dummy_cm, dummy_pt, _ents)
+_arcs = sk5f.sketchCurves.arcs_list
+assert len(_arcs) == 2 and len(sk5f.sketchCurves.lines_list) == 2 and len(_ents['slot']) == 4
+_l1, _l2 = sk5f.sketchCurves.lines_list
+_co = [(c[1], c[2]) for c in _kinds(sk5f, 'coincident')]
+assert (_arcs[0].endSketchPoint, _l1.endSketchPoint) in _co or (_arcs[0].startSketchPoint, _l1.endSketchPoint) in _co
+assert _l2.startSketchPoint in (_arcs[0].startSketchPoint, _arcs[0].endSketchPoint)  # next line starts at the arc's end
+assert any(b is _l1.startSketchPoint for _, b in _co)            # the closing arc meets the first corner
+assert sum(1 for a, b in _co if b in _arcs) == 2                  # each arc's middle point is on it
+assert len(_kinds(sk5f, 'horizontal')) == 2                       # both straight sides
+assert all(not o.isFixed for o in sk5f.sketchCurves.lines_list + _arcs + sk5f.sketchPoints._pts)
+validate({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [_slot]}]})
+_fails({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
+    {"type": "profile", "start": [0, 0], "segments": [{"through": [1, 1]}]}]}]}, 'missing to')
+
+# Test 5f2: mirror = copies of earlier entities across a construction line, tied by symmetry
+import math
+from dsl import JSON_SCHEMA
+sk5m = MockSketchObj()
+sk5m.sketchCurves.arcs_list = []
+_ents = {}
+for _e in [{"type": "profile", "id": "half", "closed": False, "start": [0, 0], "segments": [
+               {"to": [30, 0]}, {"to": [40, 10], "through": [30 + 10 * math.sin(math.pi / 4), 10 - 10 * math.cos(math.pi / 4)]},
+               {"to": [40, 20]}, {"to": [0, 20]}]},
+           {"type": "circle", "id": "hole", "center": [20, 10], "diameter": 6},
+           {"type": "circle", "id": "middle", "center": [0, 10], "diameter": 4},
+           {"type": "mirror", "id": "whole", "entities": ["half", "hole", "middle"], "line": [[0, -10], [0, 30]]}]:
+    _draw(sk5m, _e, dummy_ex, dummy_cm, dummy_pt, _ents)
+_lines, _arcs5, _circs = sk5m.sketchCurves.lines_list, sk5m.sketchCurves.arcs_list, sk5m.sketchCurves.circles_list
+_axis = next(l for l in _lines if l.isConstruction)
+assert len(_lines) == 3 + 1 + 3 and len(_arcs5) == 2 and len(_circs) == 2 + 1   # the middle circle is its own mirror
+assert len(_ents['whole']) == 6 + 5
+_xy = lambda p: (round(p.geometry.x, 6), round(p.geometry.y, 6))
+_copies = _ents['whole'][6:]
+assert _xy(_copies[0].startSketchPoint) == (0, 0) and _xy(_copies[0].endSketchPoint) == (-3, 0)
+assert _copies[0].startSketchPoint is _ents['half'][0].startSketchPoint  # on the line: shared, so the halves join
+assert _xy(_copies[-1].centerSketchPoint) == (-2, 1)
+_sym = _kinds(sk5m, 'symmetry')
+assert len(_sym) == 4 and all(c[3] is _axis for c in _sym)          # one per point off the line: 30,0 40,10 40,20 20,10
+assert sorted(_xy(c[2]) for c in _sym) == [(-4, 1), (-4, 2), (-3, 0), (-2, 1)]
+assert len(_kinds(sk5m, 'equal')) == 2                               # the arc and the circle keep their size
+_new_lines = _copies[0:1] + _copies[2:4]
+assert _new_lines[1].startSketchPoint in [p for a in _arcs5[1:] for p in (a.startSketchPoint, a.endSketchPoint)] \
+    or any(c[1] is _new_lines[1].startSketchPoint for c in _kinds(sk5m, 'coincident'))
+assert _new_lines[1].endSketchPoint is _new_lines[2].startSketchPoint   # a shared corner gets one mirrored point
+assert _new_lines[2].endSketchPoint is _ents['half'][3].endSketchPoint  # ...and the other end is on the line
+# A copy that comes out looser than its fully constrained original gets the curves tied too
+from dsl import _mirror_curves
+sk5n = MockSketchObj()
+_ents = {}
+for _e in [{"type": "polyline", "id": "p", "points": [[10, 0], [20, 0], [20, 10]]},
+           {"type": "line", "id": "ax", "start": [0, -10], "end": [0, 30]}]:
+    _draw(sk5n, _e, dummy_ex, dummy_cm, dummy_pt, _ents)
+_src = list(_ents['p'])
+_src[0].isFullyConstrained = True                     # the second line stays loose like its copy
+_made = _mirror_curves(sk5n, _src, _ents['ax'])
+_curve_sym = [c for c in _kinds(sk5n, 'symmetry') if c[1] in _src]
+assert len(_made) == 2 and len(_curve_sym) == 1 and _curve_sym[0][1:] == (_src[0], _made[0], _ents['ax'])
+_mv = lambda **kw: {"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
+    {"type": "polyline", "id": "p", "points": [[0, 0], [10, 0], [10, 10]]}, dict({"type": "mirror"}, **kw)]}]}
+validate(_mv(entities=["p"], line=[[0, 0], [0, 1]]))
+_fails(_mv(entities=["q"], line=[[0, 0], [0, 1]]), 'not an entity id defined earlier')
+_fails(_mv(entities=["p"], line=[[0, 0]]), 'line must be two points')
+_fails(_mv(entities=[], line=[[0, 0], [0, 1]]), 'non-empty list')
+assert 'mirror' in JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items'][
+    'properties']['type']['enum']
+
+# Angle parameters: by name, or deg/rad in something that isn't a length
+from dsl import _is_angle_param
+assert _is_angle_param('draft_angle', '5', False)
+assert _is_angle_param('tilt', '5 deg', False)
+assert not _is_angle_param('gear_base_r', 'gear_pitch_r * cos(20 deg)', True)
+assert not _is_angle_param('gear_radius', '10 mm', True)
+
+# Test 5g: Shape plugins. The core names none of them; a shape step expands into plain DSL
+import math
+import shapes as shape_registry
+_ops = [s.op for s in shape_registry.get_all_shapes()]
+assert 'spur_gear' in _ops
+for _f in ('dsl.py', 'llm.py', 'VibeShaper.py', 'shapes/__init__.py', 'shapes/base.py'):
+    _src = (_HERE / _f).read_text(encoding='utf-8')
+    for _op in _ops:
+        assert not _re.search(rf'\b{_re.escape(_op)}\b', _src), f'{_f} mentions the shape {_op!r}'
+_step_props = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']
+assert set(_ops) <= set(_step_props['op']['enum']) and 'teeth' in _step_props
+assert 'spur_gear' in llm.SYSTEM
+
+_gears = {"parameters": {"gear_module": "2 mm", "gear1_teeth": "15", "gear2_teeth": "26", "gear_thick": "8 mm"},
+          "timeline": [
+              {"op": "spur_gear", "id": "gear1", "module": "gear_module", "teeth": "gear1_teeth",
+               "thickness": "gear_thick", "bore": "8 mm"},
+              {"op": "spur_gear", "id": "gear2", "module": "gear_module", "teeth": "gear2_teeth",
+               "thickness": "gear_thick", "center": ["gear_module * (gear1_teeth + gear2_teeth) / 2", 0],
+               "rotate": "180 deg / gear2_teeth"},
+              {"op": "fillet", "radius": "0.5 mm", "edges": {"feature": "gear2", "at": "top"}}]}
+validate(_gears)
+_x = dsl_mod.expand_shapes(_gears)
+assert _gears['timeline'][0]['op'] == 'spur_gear'                 # the original is left as written
+assert dsl_mod.expand_shapes(_x) is _x                            # nothing left to expand
+_by_id = {s.get('id'): s for s in _x['timeline']}
+assert _by_id['gear2']['op'] == 'circular_pattern' and _by_id['gear2']['quantity'] == 'gear2_teeth'
+assert _by_id['gear2']['center'] == ["gear_module * (gear1_teeth + gear2_teeth) / 2", 0]
+assert _by_id['gear1_bore']['mode'] == 'cut' and 'gear2_bore' not in _by_id
+assert _by_id['gear2_tooth']['mode'] == 'join' and _x['timeline'][-1]['op'] == 'fillet'
+
+
+def _eval_params(params):
+    """Evaluate the generated formulas in plain Python (radians, mm)."""
+    vals, env = {}, {'cos': math.cos, 'sin': math.sin, 'tan': math.tan, 'acos': math.acos, 'abs': abs,
+                       'floor': math.floor, 'sqrt': math.sqrt}
+
+    def ev(x):
+        x = _re.sub(r'(\d+(?:\.\d+)?)\s*deg', r'(\1*%r)' % (math.pi / 180), str(x))
+        x = _re.sub(r'(\d+(?:\.\d+)?)\s*(mm|rad)\b', r'\1', x)
+        return eval(x, env, vals)
+    for k, v in params.items():
+        vals[k] = ev(v)
+    return vals, ev
+
+
+# The tooth's points really lie on the involute
+_vals, _ev = _eval_params(_x['parameters'])
+for _gid, _z in (('gear1', 15), ('gear2', 26)):
+    _m, _pa = 2.0, math.radians(20)
+    _rb = _m * _z / 2 * math.cos(_pa)
+    _inv = lambda a: math.tan(a) - a
+    _true = lambda r: math.pi / (2 * _z) + _inv(_pa) - _inv(math.acos(_rb / r))
+    assert abs(_vals[f'{_gid}_tip_angle'] - _true(_m * _z / 2 + _m)) < 1e-9
+    assert abs(_vals[f'{_gid}_flank_angle'] - _true(max(_rb, _m * _z / 2 - 1.25 * _m) + 0.001)) < 1e-6
+    _prof = _by_id[f'{_gid}_tooth_sk']['entities'][0]
+    _cx = _ev(_prof['start'][0])
+    _rot = _vals[f'{_gid}_rotate_angle']
+    _px, _py = (_ev(c) for c in _prof['segments'][1]['through'])  # flank point on the pitch circle
+    assert abs(math.hypot(_px - _cx, _py) - _m * _z / 2) < 1e-9
+    assert abs(abs(math.atan2(_py, _px - _cx) - _rot) * _m * _z / 2 - math.pi * _m / 4) < 1e-9  # half a tooth
+assert abs(_vals['gear2_rotate_angle'] - math.pi / 26) < 1e-12
+
+_g = lambda **kw: {"parameters": {}, "timeline": [dict({"op": "spur_gear", "id": "g", "module": 2, "teeth": 20,
+                                                        "thickness": 5}, **kw)]}
+validate(_g())
+_fails(_g(teeth=6), 'teeth')
+_fails(_g(id='my gear'), 'snake_case')
+_fails(_g(mode='cut'), 'mode')
+_fails({"parameters": {"g_pitch_r": "1 mm"}, "timeline": _g()['timeline']}, 'already exist')
+_fails({"parameters": {}, "timeline": [{"op": "spur_gear", "id": "g", "module": 2, "thickness": 5}]}, 'missing teeth')
+
+_sk1 = {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]}
+
+# Edges lying in a sketch's plane ("on"): the rim where a hole meets the face it was sketched on
+class _V:
+    def __init__(self, x, y, z):
+        self.x, self.y, self.z = x, y, z
+
+class _OnEdge:
+    def __init__(self, z, circle=True):
+        self.pointOnEdge = _V(1, 0, z)
+        self.startVertex = types.SimpleNamespace(geometry=_V(1, 0, z))
+        self.endVertex = self.startVertex
+        self.geometry = types.SimpleNamespace(curveType=2 if circle else 1, center=_V(0, 0, z))
+        self.faces = MockEdgeCollection([])
+
+from dsl import _edge_on_sketch_plane
+_top_sk = types.SimpleNamespace(origin=_V(0, 0, 0.5), xDirection=_V(1, 0, 0), yDirection=_V(0, 1, 0))
+_rim_top, _rim_bottom = _OnEdge(0.5), _OnEdge(0.0)
+assert _edge_on_sketch_plane(_rim_top, _top_sk) and not _edge_on_sketch_plane(_rim_bottom, _top_sk)
+_side_sk = types.SimpleNamespace(origin=_V(1, 0, 0), xDirection=_V(0, 1, 0), yDirection=_V(0, 0, 1))  # the x = 1 plane
+assert _edge_on_sketch_plane(_rim_top, _side_sk) is False  # its center is off that plane
+_hole_face = _FFace([_rim_top, _rim_bottom])
+assert _select_edges(any_body, {'feature': 'h', 'on': 'top_sk'}, {'h': _Feat([_hole_face])},
+                     {'top_sk': _top_sk}) == [_rim_top]
+_fails({"parameters": {}, "timeline": [_sk1, {"op": "extrude", "id": "e", "sketch": "s", "distance": 5},
+                                       {"op": "chamfer", "distance": 1, "edges": {"feature": "e", "on": "nope"}}]},
+       'edges.on')
+
+# linear_pattern in two directions
+_lp = lambda **kw: {"parameters": {}, "timeline": [_sk1, {"op": "extrude", "id": "e", "sketch": "s", "distance": 5},
+                                                   dict({"op": "linear_pattern", "feature": "e", "direction": "x",
+                                                         "distance": 10, "quantity": 3}, **kw)]}
+validate(_lp(direction2="y", quantity2=2, distance2=8))
+_fails(_lp(direction2="x", quantity2=2, distance2=8), 'direction2')
+_fails(_lp(direction2="y"), 'missing quantity2')
+assert 'direction2' in _step_props and 'on' in _step_props['edges']['anyOf'][1]['properties']
+
+
+def _shape(op, **kw):
+    return {"parameters": {}, "timeline": [dict({"op": op}, **kw)]}
+
+
+def _expand(op, **kw):
+    d = _shape(op, **kw)
+    validate(d)
+    x = dsl_mod.expand_shapes(d)
+    return x, {s.get('id'): s for s in x['timeline']}, _eval_params(x['parameters'])
+
+
+for _op in ('bolt_hole', 'vent_grid', 'tslot_profile'):
+    assert _op in _ops and _op in llm.SYSTEM
+
+# Bolt holes: ISO sizes, pockets from the entry face in the hole's direction
+_corners = [["-hole_off", "-hole_off"], ["hole_off", "hole_off"]]
+_x, _by, (_v, _ev) = _expand('bolt_hole', id='b', size='M5', plane='xy', offset='9 mm', depth='-9 mm',
+                             head='nut_trap', points=[[-17.5, -17.5], [17.5, 17.5]])
+assert _x['parameters']['b_hole_d'] == '5.5 mm'
+assert abs(_v['b_nut_af'] - 8.6) < 1e-9 and abs(_v['b_nut_depth'] - 5.0) < 1e-9  # 8 + 2 x 0.3, 4.7 + 0.3
+assert _by['b']['mode'] == 'cut' and _by['b']['distance'] == 'b_depth'
+assert abs(_ev(_by['b_nut']['distance']) + 5.0) < 1e-9                 # same way as the hole: down
+assert len(_by['b_sk']['entities']) == 2 and _by['b_nut_sk']['entities'][0]['sides'] == 6
+assert _by['b_sk']['offset'] == '9 mm'
+_x, _by, (_v, _ev) = _expand('bolt_hole', id='c', size='M3', depth=6, head='counterbore', fit='close',
+                             tolerance=0.2, center=[0, 0])
+assert _x['parameters']['c_hole_d'] == '3.2 mm' and abs(_v['c_head_d'] - 5.9) < 1e-9
+assert abs(_ev(_by['c_head']['distance']) - 3.2) < 1e-9                 # 3 + 0.2, up like the hole
+_x, _by, (_v, _ev) = _expand('bolt_hole', id='k', size='M4', depth=-5, head='countersink')
+_ch = _by['k_head']
+assert _ch['op'] == 'chamfer' and _ch['edges'] == {'feature': 'k', 'type': 'circle', 'on': 'k_sk'}
+assert abs(_ev(_ch['distance']) - (8.96 + 0.6 - 4.5) / 2) < 1e-9  # a 90 degree cone out to the head
+_x, _by, _ = _expand('bolt_hole', id='p', size='M6', depth=-5)
+assert set(_by) == {'p_sk', 'p'}
+_fails(_shape('bolt_hole', id='b', size='M7', depth=5), 'size must be')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, head='cap'), 'head must be')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=0), 'depth')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, points=[]), 'points')
+
+# Vent grids: the counts are formulas, the patterns start in the corner and fill the area
+_x, _by, (_v, _ev) = _expand('vent_grid', id='v', width=60, height=40, size=5, wall=1, layout='grid', depth=-2)
+assert _v['v_count_a'] == 10 and _v['v_count_b'] == 6       # floor((60 - 5) / 6) + 1, floor((40 - 5) / 6) + 1
+_pat = _by['v']
+assert _pat['op'] == 'linear_pattern' and _pat['feature'] == 'v_hole'
+assert (_pat['direction'], _pat['direction2']) == ('x', 'y') and _pat['quantity'] == 'v_count_a'
+_c = [_ev(c) for c in _by['v_hole_sk']['entities'][0]['center']]
+assert abs(_c[0] - -27) < 1e-9 and abs(_c[1] - -15) < 1e-9  # centered: -(10 - 1) * 6 / 2, -(6 - 1) * 6 / 2
+assert _by['v_hole']['distance'] == -2
+_x, _by, (_v, _ev) = _expand('vent_grid', id='h', plane='xz', center=[10, 5], width=50, height=30,
+                             hole='hexagon', size=5, wall=1.5, depth=3)
+assert _by['h_hole_sk']['entities'][0]['type'] == 'regular_polygon' and _by['h']['feature'] == 'h_hole2'
+assert (_by['h']['direction'], _by['h']['direction2']) == ('x', 'z')
+assert _ev(_by['h']['quantity']) == _v['h_count_a'] - 1 and _ev(_by['h']['quantity2']) == _v['h_count_b'] - 1
+_a1 = [_ev(c) for c in _by['h_hole_sk']['entities'][0]['center']]
+_b1 = [_ev(c) for c in _by['h_hole2_sk']['entities'][0]['center']]
+assert abs(math.hypot(_b1[0] - _a1[0], _b1[1] - _a1[1]) - 6.5) < 1e-9  # honeycomb: every neighbor 5 + 1.5 away
+_last = [_a1[0] + (_v['h_count_a'] - 1) * _v['h_pitch_a'], _a1[1] + (_v['h_count_b'] - 1) * _v['h_pitch_b']]
+assert abs((_a1[0] + _last[0]) / 2 - 10) < 1e-9 and abs((_a1[1] + _last[1]) / 2 - 5) < 1e-9
+assert _last[0] + _v['h_ext_a'] / 2 <= 10 + 25 and _last[1] + 2.5 <= 5 + 15  # the holes stay inside the area
+_x, _by, (_v, _ev) = _expand('vent_grid', id='s', width=80, height=30, hole='slot', size=4, length=20, depth=-2,
+                             columns=6)
+_slot = _by['s_hole_sk']['entities'][0]
+assert _slot['type'] == 'profile' and sum('through' in g for g in _slot['segments']) == 2
+assert _v['s_count_a'] == 6 and _v['s_count_b'] == 1
+_ys = [_ev(p[1]) for p in [_slot['start']] + [g['to'] for g in _slot['segments']]]
+assert abs(max(_ys) - min(_ys) - 16) < 1e-9                   # straight part: 20 - 4
+_fails(_shape('vent_grid', id='v', width=5, height=40, size=5, depth=-2), 'at least 2 x 2')
+_fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, hole='slot'), 'length')
+_fails(_shape('vent_grid', id='v', width=60, height=40, size=5, length=4, depth=-2, hole='slot'), 'more than its width')
+_fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, rows=0), 'rows')
+
+
+def _crosses(p, q, r, s):
+    d = lambda a, b, c: (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    return d(p, q, r) * d(p, q, s) < -1e-12 and d(r, s, p) * d(r, s, q) < -1e-12
+
+
+def _sketch_loops(entities, ev):
+    """What a sketch draws, numerically: its curves (mirror entities copying the curves they
+    name, the way _mirror_curves does), chained into closed loops. Arcs become two chords through
+    their middle point; circles 64-gons."""
+    def P(q):
+        return (ev(q[0]), ev(q[1]))
+    ids, curves = {}, []
+    for e in entities:
+        t = e['type']
+        if t == 'profile':
+            cur, out = P(e['start']), []
+            for sg in e['segments']:
+                b = P(sg['to'])
+                out.append([cur, P(sg['through']), b] if 'through' in sg else [cur, b])
+                cur = b
+            if e.get('closed', True) and math.dist(cur, P(e['start'])) > 1e-9:
+                out.append([cur, P(e['start'])])
+        elif t == 'circle':
+            out = [('circle', P(e['center']), ev(e['diameter']) / 2)]
+        elif t == 'center_rectangle':
+            (cx, cy), w, h = P(e['center']), ev(e['width']) / 2, ev(e['height']) / 2
+            c = [(cx - w, cy - h), (cx + w, cy - h), (cx + w, cy + h), (cx - w, cy + h)]
+            out = [[c[i], c[(i + 1) % 4]] for i in range(4)]
+        else:  # mirror
+            (ax, ay), (bx, by) = P(e['line'][0]), P(e['line'][1])
+            dx, dy = bx - ax, by - ay
+
+            def rf(p):
+                f = ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)
+                return (2 * (ax + f * dx) - p[0], 2 * (ay + f * dy) - p[1])
+
+            def on(p):
+                return abs((p[0] - ax) * dy - (p[1] - ay) * dx) / math.hypot(dx, dy) < 1e-9
+            src = [c for r in e['entities'] for c in ids[r]]
+            out = []
+            for c in src:
+                if c[0] == 'circle':
+                    if not on(c[1]):
+                        out.append(('circle', rf(c[1]), c[2]))
+                elif not all(on(p) for p in c) and not (len(c) == 3 and on(c[1]) and math.dist(rf(c[0]), c[2]) < 1e-9):
+                    out.append([rf(p) for p in c])
+            curves += out
+            if 'id' in e:
+                ids[e['id']] = src + out
+            continue
+        curves += out
+        if 'id' in e:
+            ids[e['id']] = out
+    loops, chains = [], []
+    for c in curves:
+        if c[0] == 'circle':
+            loops.append([(c[1][0] + c[2] * math.cos(a * math.pi / 32), c[1][1] + c[2] * math.sin(a * math.pi / 32))
+                          for a in range(64)])
+        else:
+            chains.append(c)
+
+    def key(p):
+        return round(p[0], 6), round(p[1], 6)
+    ends = {}
+    for i, c in enumerate(chains):
+        for p in (c[0], c[-1]):
+            ends.setdefault(key(p), []).append(i)
+    assert all(len(v) == 2 for v in ends.values()), 'every point joins exactly two curves'
+    used = set()
+    for i in range(len(chains)):
+        if i in used:
+            continue
+        used.add(i)
+        pts = list(chains[i])
+        while key(pts[-1]) != key(pts[0]):
+            j = next(j for j in ends[key(pts[-1])] if j not in used)
+            used.add(j)
+            c = chains[j] if key(chains[j][0]) == key(pts[-1]) else chains[j][::-1]
+            pts += c[1:]
+        loops.append(pts[:-1])
+    return loops
+
+
+def _simple(pts):
+    segs = list(zip(pts, pts[1:] + pts[:1]))
+    return not any(_crosses(*segs[i], *segs[j]) for i in range(len(segs)) for j in range(i + 2, len(segs)))
+
+
+def _inside(pt, pts):
+    x, y, c = pt[0], pt[1], False
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            c = not c
+    return c
+
+
+def _has(pts, x, y):
+    return any(abs(p[0] - x) < 1e-6 and abs(p[1] - y) < 1e-6 for p in pts)
+
+
+# T-slot profiles: the sketch draws 1/8 (square) or 1/4 (2040 and longer) and mirrors it. Mirrored,
+# it is one simple outline (counter-clockwise, the right size) with every bore, corner hole and
+# hollow between cells inside it.
+for _series, (_w, _h, _corner) in {'2020': (20, 20, 0), '2040': (20, 40, 0), '2060': (20, 60, 0),
+                                   '3030': (30, 30, 4), '4040': (40, 40, 4), '4080': (40, 80, 4)}.items():
+    _x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series=_series, length=100)
+    _ents = _by['t_sk']['entities']
+    _drawn = [_ev(c) for e in _ents if e['type'] == 'profile' for sg in e['segments'] for c in sg['to']]
+    assert all(x > -1e-9 for x in _drawn[0::2])                       # only right of the center line...
+    if _w == _h:
+        assert all(y <= -x + 1e-9 for x, y in zip(_drawn[0::2], _drawn[1::2]))  # ...and below the diagonal
+        assert [e['type'] for e in _ents] == ['profile', 'mirror', 'mirror', 'mirror']
+    else:
+        assert all(y < 1e-9 for y in _drawn[1::2])                    # ...and below the middle
+    _outs = _sketch_loops(_ents, _ev)
+    assert len(_outs) == 1
+    _out = _outs[0]
+    assert _simple(_out)
+    assert abs(max(p[0] for p in _out) * 2 - _w) < 1e-9 and abs(max(p[1] for p in _out) * 2 - _h) < 1e-9
+    _segs = list(zip(_out, _out[1:] + _out[:1]))
+    assert 0 < abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in _segs)) / 2 < _w * _h
+    _cells = _h // _w
+    _holes = _sketch_loops(_by['t_hole_sk']['entities'], _ev)
+    assert len(_holes) == _cells + _corner + (_cells - 1)              # bores, corner holes, hollows
+    for _hp in _holes:
+        assert _simple(_hp) and all(_inside(p, _out) for p in _hp)
+
+# The 2020 slot: 6.2 opening, 11 wide under the 1.8 lips, down to the 7.8 square core; 7.2 x 0.5 recess
+_x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='2020', length=100)
+_out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
+for _sx in (-1, 1):
+    assert _has(_out, _sx * 3.6, -10) and _has(_out, _sx * 3.6, -9.5) and _has(_out, _sx * 3.1, -9.5)
+    assert _has(_out, _sx * 3.1, -8.2) and _has(_out, _sx * 5.5, -8.2)
+    assert _has(_out, _sx * (3.9 - 1.5 * math.sqrt(0.5)), -3.9)   # where the spar meets the core
+    assert _has(_out, -3.9, _sx * (3.9 - 1.5 * math.sqrt(0.5)))   # the same on the left slot
+assert _has(_out, -10, 8.5) and _has(_out, -10 + 1.5 - 1.5 * math.sqrt(0.5), 10 - 1.5 + 1.5 * math.sqrt(0.5))
+# The 4040's round core: the slot's floor runs over the core's edge, 12 mm in
+_x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='4040', length=100)
+_out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
+assert _has(_out, 0, -8) and _has(_out, 8, 0) and _has(_out, 0, 8) and _has(_out, -8, 0)
+_arcs = [sg for sg in _by['t_sk']['entities'][0]['segments'] if 'through' in sg]
+for _sg in _arcs[:1]:                                                  # the floor's arc point is on the core
+    assert abs(math.hypot(*[_ev(c) for c in _sg['through']]) - 8) < 1e-9
+assert _by['t_hole_sk']['entities'][1]['type'] == 'center_rectangle'
+# Overrides: no bore, no recess, square corners, moved
+_x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='2020', length=50, center=[100, 0], bore=0,
+                             slot=6.5, recess_width=0, fillet=0)
+assert 't_hole_sk' not in _by and _x['parameters']['t_slot'] == '6.5 mm'
+assert 't_recess_width' not in _x['parameters'] and 't_fillet' not in _x['parameters']
+_out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
+assert _has(_out, 90, -10) and _has(_out, 110, 10) and not any('through' in s for s in _by['t_sk']['entities'][0]['segments'])
+_fails(_shape('tslot_profile', id='t', series='2030', length=50), 'series')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, slot=12), 'slot < chamber')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, lip=4), 'lip + 0.71 * spar')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, core=1), '1.41 * spar < core')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, bore=9), 'bore < core')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, recess_depth=2), 'recess_depth < lip')
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, core_shape='oval'), 'core_shape')
 
 # Test 6: Layer 2 Explicit constraints validation
 dsl_with_constraints = {

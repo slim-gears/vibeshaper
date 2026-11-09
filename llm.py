@@ -43,15 +43,19 @@ OPERATIONS (Each timeline step must contain ONLY its required keys!):
 3. Revolve:
    {"op": "revolve", "id": optional_name, "sketch": sketch_id, "axis": "x"|"y"|"z", "angle": "360 deg" (optional), "mode": "new_body"|"join"|"cut"}
 4. Fillet (ONLY uses radius and edges! NEVER put thickness or remove_faces here!):
-   {"op": "fillet", "radius": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"}
+   {"op": "fillet", "radius": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
 5. Chamfer (ONLY uses distance and edges!):
-   {"op": "chamfer", "distance": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"}
+   {"op": "chamfer", "distance": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
+   edge_object picks edges made by an earlier step: {"feature": step_id, "faces": "all"|"side"|"start"|"end" (optional), "exclude": step_id or [ids] (optional, drops edges touching those steps' faces), "on": sketch_id (optional, only edges in that sketch's plane), "type": "circle"|"line" (optional)}.
+   Prefer it over the broad words when only some edges should change, e.g. {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}.
 6. Shell (ONLY uses thickness and remove_faces! NEVER put radius or edges here!):
    {"op": "shell", "thickness": length, "remove_faces": "top"|"bottom"|"none"}
 7. Circular Pattern:
-   {"op": "circular_pattern", "feature": feature_id (optional), "axis": "z", "quantity": count, "angle": "360 deg"}
+   {"op": "circular_pattern", "feature": feature_id (optional), "axis": "z", "center": [a, b] (optional, default [0, 0]), "quantity": count, "angle": "360 deg"}
+   The axis passes through "center" ([x, y] for "z", [y, z] for "x", [x, z] for "y"). Set it whenever the patterned part is not centered on the origin.
 8. Linear Pattern:
-   {"op": "linear_pattern", "feature": feature_id (optional), "direction": "x"|"y"|"z", "distance": spacing, "quantity": count}
+   {"op": "linear_pattern", "feature": feature_id (optional), "direction": "x"|"y"|"z", "distance": spacing, "quantity": count,
+    "direction2": another axis, "distance2": spacing, "quantity2": count (optional, all three for a grid)}
 9. Thread:
    {"op": "thread", "feature": feature_id (optional), "target": "internal"|"external"|"all" (optional), "modeled": true|false (optional, default true), "designation": "M6x1" (optional)}
 10. Mirror:
@@ -69,6 +73,8 @@ SKETCH ENTITIES (entities can have optional "id": "name" to be referenced by con
 {"type": "polygon", "points": [[a, b], ...], "closed": true}   at least 3 points
 {"type": "line", "start": [a, b], "end": [c, d]}
 {"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires
+{"type": "regular_polygon", "center": [a, b], "sides": n, "across_flats": d}   or "diameter" (through the corners) instead of across_flats; e.g. hex nut recesses
+{"type": "mirror", "id": name, "entities": [ids of earlier entities in this sketch], "line": [[a, b], [c, d]]}   copies them across the line through the two points, tied by symmetry. For symmetric outlines, draw one side as an open chain ("closed": false) that starts and ends on the line, then mirror it; mirror the mirror's id to mirror again
 
 RULES & BEST PRACTICES
 - NEVER combine two operations into one step! Each operation (`extrude`, `fillet`, `shell`, `chamfer`, etc.) MUST be its own separate entry in the `timeline` array.
@@ -162,6 +168,13 @@ TOOLS
 - You can call tools before answering. Use them when they help; when you have what you need, reply with
   ONLY the JSON design.
 """
+
+SHAPES_NOTE = """
+
+READY-MADE SHAPES (one step each; use them instead of drawing these by hand)
+"""
+if dsl.shapes_prompt():
+    SYSTEM += SHAPES_NOTE + dsl.shapes_prompt()
 
 CONTEXT_NOTE = """
 

@@ -1,0 +1,20 @@
+{
+  "name": "Vented plate on a 2020 rail",
+  "parameters": {
+    "rail_len": "100 mm",
+    "plate_w": "60 mm",
+    "plate_d": "40 mm",
+    "plate_thick": "8 mm",
+    "bolt_off": "20 mm"
+  },
+  "timeline": [
+    {"op": "tslot_profile", "id": "rail", "series": "2020", "plane": "yz", "center": [0, "-10 mm"], "length": "rail_len"},
+    {"op": "sketch", "id": "plate_sk", "plane": "xy", "entities": [
+      {"type": "center_rectangle", "center": ["rail_len / 2", 0], "width": "plate_w", "height": "plate_d"}]},
+    {"op": "extrude", "id": "plate", "sketch": "plate_sk", "distance": "plate_thick", "mode": "new_body"},
+    {"op": "bolt_hole", "id": "plate_bolts", "size": "M5", "plane": "xy", "offset": "plate_thick", "depth": "-plate_thick",
+     "head": "counterbore", "points": [["rail_len / 2 - bolt_off", 0], ["rail_len / 2 + bolt_off", 0]]},
+    {"op": "vent_grid", "id": "plate_vent", "plane": "xy", "offset": "plate_thick", "center": ["rail_len / 2", 0],
+     "width": "24 mm", "height": "30 mm", "hole": "hexagon", "size": "4 mm", "wall": "1.2 mm", "depth": "-plate_thick"}
+  ]
+}

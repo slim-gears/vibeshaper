@@ -145,6 +145,49 @@ A closed planar polygon (e.g. triangles, brackets, gusset ribs).
 * **`points`**: Array of at least three `[x, y]` points.
 * **`closed`**: Defaults to `true`. Connects the last point back to the first point.
 
+### 4.6. Regular Polygon (`regular_polygon`)
+A regular polygon (e.g. a hex nut recess), built like Fusion's own polygon tool: corners on a construction circle, equal sides, the bottom side horizontal.
+```json
+{
+  "type": "regular_polygon",
+  "center": ["bolt_x", "bolt_y"],
+  "sides": 6,
+  "across_flats": "nut_af"
+}
+```
+* **`center`**: `[x, y]` center coordinate.
+* **`sides`**: Whole number from 3 to 64.
+* **`across_flats`** or **`diameter`** *(exactly one)*: Distance between opposite flats, or the diameter of the circle through the corners.
+
+### 4.7. Profile (`profile`)
+A closed outline of straight and arc segments, end to end (a slot, a rounded tab, a gear tooth).
+```json
+{
+  "type": "profile",
+  "start": [0, 0],
+  "segments": [
+    {"to": ["slot_len", 0]},
+    {"to": ["slot_len", "slot_w"], "through": ["slot_len + slot_w / 2", "slot_w / 2"]},
+    {"to": [0, "slot_w"]},
+    {"to": [0, 0], "through": ["-slot_w / 2", "slot_w / 2"]}
+  ]
+}
+```
+* **`start`**: `[x, y]` of the first corner.
+* **`segments`**: Each goes from the previous corner `"to"` the next. With `"through"` it is a circular arc through that point; without, a straight line.
+* **`closed`** *(optional)*: Defaults to `true`. If the last segment doesn't end at `start`, a straight line closes the outline.
+
+### 4.8. Mirror (`mirror`)
+Copies earlier entities of the same sketch across a line, like Fusion's sketch Mirror. Each copy is tied to its original by symmetry constraints about a construction line, so it follows every parameter change.
+```json
+{"type": "profile", "id": "right", "closed": false, "start": [0, 0], "segments": [
+  {"to": ["w / 2", 0]}, {"to": ["w / 2", "h"]}, {"to": [0, "h"]}]},
+{"type": "mirror", "id": "both", "entities": ["right"], "line": [[0, 0], [0, "h"]]}
+```
+* **`entities`**: IDs of entities defined earlier in the sketch. A mirror's own `id` names the originals plus the copies, so mirroring it again doubles everything (draw 1/4 of a symmetric outline, mirror it twice).
+* **`line`**: Two points `[[x1, y1], [x2, y2]]` on the mirror line.
+* Points on the line are shared with the copy, so an open chain that starts and ends on the line becomes one closed outline. A curve that is its own mirror image (a circle centered on the line) isn't copied.
+
 ---
 
 ## 5. Timeline Operations
@@ -184,7 +227,7 @@ Creates a planar sketch containing 2D geometric entities.
   - `{"type": "midpoint", "point": "p1", "entity": "l1"}`: Point constrained to curve midpoint.
   - `{"type": "symmetry", "entities": ["l1", "l2"], "symmetry_line": "centerline"}`: Symmetry across a line.
 
-> **Note on Constraint Automation**: Orthogonal segments in `polyline` and `polygon` (where $\vec{v}_1 \cdot \vec{v}_2 \approx 0$), axis-alignment (Horizontal/Vertical), and origin coincident anchors `[0, 0]` are automatically inferred by the engine. Explicit `constraints` are optional and should be used to enforce parametric design intent (especially for angled features, equal sizes, or concentric circles).
+> **Note on Constraint Automation**: Sketches are constrained the way a person would do it, and geometry is never fixed, so changing a parameter later moves it. Rectangles get horizontal/vertical sides, a center on a construction diagonal and width/height dimensions. Axis-aligned segments of lines, polylines and polygons get horizontal/vertical constraints and a length dimension; any coordinate still free gets a distance from the origin (or alignment with it when it is 0). Explicit `constraints` are optional; use them for intent the coordinates don't show, such as angled features.
 
 ### 5.2. `extrude`
 Extrudes all closed profiles in the sketch along the sketch normal.
@@ -251,6 +294,18 @@ Rounds sharp edges of a solid body.
   * `"bottom"`: Edges situated at the minimum Z extent.
   * `"circular"`: All circular/arc edges (e.g. rims of cylinders).
   * `"all"`: All edges of the body.
+  * An object picks edges by the step that made them, and can narrow them down:
+    * `"feature"`: ID of an earlier step; only edges of the faces it made (as they are now, after later steps).
+    * `"faces"`: `"all"` (default), `"side"`, `"start"` or `"end"` faces of that step (for an extrude, `"side"` is a hole's bore).
+    * `"exclude"`: ID (or list of IDs) of steps whose faces the edge must not touch.
+    * `"on"`: ID of an earlier sketch; only edges lying in that sketch's plane (the rims where a hole meets the face it was sketched on).
+    * `"type"` (`"circle"` or `"line"`), `"at"` (`"top"` or `"bottom"`) and `"direction"` (`"x"`, `"y"`, `"z"`) filter further.
+
+    Chamfer only the outside rims of screw holes, not the rims inside a pocket:
+    ```json
+    {"op": "chamfer", "distance": "1.5 mm",
+     "edges": {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}}
+    ```
 * **`target`** *(optional string)*: Target body name or feature ID. Defaults to the active body.
 
 > [!WARNING]
@@ -267,7 +322,7 @@ Bevels edges of a solid body by a uniform distance.
 }
 ```
 * **`distance`** *(required length)*: Chamfer setback distance.
-* **`edges`** *(optional)*: Same selectors as `fillet` (`"circular"`, `"top"`, `"bottom"`, etc.).
+* **`edges`** *(optional)*: Same selectors as `fillet`, including the object form that picks edges by feature.
 
 ### 5.7. `shell`
 Hollows out a solid body leaving walls of specified thickness, optionally removing open faces.
@@ -298,6 +353,7 @@ Replicates a feature or body circularly around an axis.
 ```
 * **`feature`** *(optional string)*: Feature ID to duplicate. Defaults to the immediately preceding feature.
 * **`axis`** *(optional string)*: `"x"`, `"y"`, or `"z"` (defaults to `"z"`).
+* **`center`** *(optional point)*: Where the axis passes through, in the coordinates of the plane normal to it: `[x, y]` for `"z"`, `[y, z]` for `"x"`, `[x, z]` for `"y"`. Defaults to the origin. Use it for anything not centered on the origin, such as the second gear of a pair: `"center": ["center_dist", 0]`.
 * **`quantity`** *(required)*: Number of instances including the original (must evaluate to a unitless integer $\ge 2$).
 * **`angle`** *(optional angle)*: Total span angle. Defaults to `"360 deg"`.
 
@@ -316,6 +372,7 @@ Replicates a feature along a linear coordinate axis with specified spacing.
 * **`direction`** *(optional string)*: `"x"`, `"y"`, or `"z"` (defaults to `"x"`).
 * **`distance`** *(required length)*: Step spacing between instances.
 * **`quantity`** *(required)*: Total instance count.
+* **`direction2`**, **`quantity2`**, **`distance2`** *(optional)*: A second direction (another axis), its count and spacing, for a grid of copies. Give all three.
 
 ### 5.10. `thread`
 Applies real modeled 3D threads or cosmetic threads to cylindrical faces (holes or shafts).
@@ -392,6 +449,16 @@ Generates a parametric 3D helical coil, compression/extension spring, or spiral 
 * **`section`** *(optional string)*: Cross-section shape: `"circle"` (default) or `"square"`.
 * **`clockwise`** *(optional boolean)*: `true` for standard right-hand helix (default), `false` for left-hand.
 * **`mode`** *(optional string)*: `"new_body"` (default), `"join"`, `"cut"`, or `"intersect"`.
+
+### 5.14. Shapes (plugin steps)
+Ready-made parts, such as a spur gear, are plugins in the `shapes/` folder. Each adds its own step type (`"op"`), described to the model in the system prompt. VibeShaper turns such a step into ordinary parameters and steps before validating and building, so the timeline holds plain sketches, extrudes and patterns.
+
+* **`id`** *(required)*: Names the finished part, so later steps can refer to it (for example in an edge selector). The parameters and steps a shape adds start with this id (`gear2_pitch_r`, `gear2_tooth_sk`...).
+* The available shapes and their keys are listed in each plugin's `prompt` (see `shapes/`):
+  * `spur_gear`: an involute spur gear.
+  * `bolt_hole`: clearance holes for metric bolts (M2 to M12), with an optional counterbore, countersink or hex nut trap, sized from ISO tables.
+  * `vent_grid`: round, hexagonal (honeycomb) or slot vent holes filling a rectangle; the hole count follows the area.
+  * `tslot_profile`: an aluminum T-slot extrusion (2020, 2040, 3030, 4040...) with the real section: rounded corner blocks with lips, a core and bore in each cell, diagonal spars, T-shaped slots and hollows between cells.
 
 ---
 

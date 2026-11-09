@@ -244,6 +244,31 @@ The tools the model can call are plug-ins too, in the `tools/` folder. The curre
    ```
 3. VibeShaper discovers it automatically and offers its tools to every model that supports tool calling and has the capabilities in `needs`. If two toolkits use the same tool name, the one listed first (lower `order`) keeps it.
 
+### Adding Shapes
+
+Ready-made parts the model can ask for in one step, such as the spur gear (`shapes/spur_gear.py`), are plug-ins in the `shapes/` folder. A shape adds a step type and turns it into ordinary parameters and steps, so it never calls Fusion and is easy to test.
+
+1. Create a file in `shapes/` (e.g. `shapes/sprocket.py`).
+2. Subclass `BaseShape`:
+   ```python
+   from .base import BaseShape
+
+   class Sprocket(BaseShape):
+       op = 'sprocket'                       # the new step type
+       schema = {'teeth': {'type': ['string', 'number']}}   # its keys, for the reply schema
+       prompt = '{"op": "sprocket", "id": name, "teeth": count, ...}  what it makes and how to use it'
+
+       def validate(self, step, where):
+           ...                               # raise ValueError(f'{where}: ...') for bad input
+
+       def expand(self, step):
+           gid = step['id']                  # prefix everything you add with it
+           params = {f'{gid}_pitch_r': '...'}
+           steps = [...]                     # plain DSL steps; give the finishing one the step's id
+           return params, steps
+   ```
+3. VibeShaper discovers it automatically, adds it to the reply schema and the system prompt, and expands it before validating and building.
+
 ---
 
 ## 🧪 Testing Outside Fusion 360

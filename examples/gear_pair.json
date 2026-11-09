@@ -1,0 +1,16 @@
+{
+  "name": "gear_pair",
+  "parameters": {
+    "gear_module": "2 mm",
+    "gear1_teeth": "15",
+    "gear2_teeth": "25",
+    "gear_thick": "8 mm",
+    "gear_center_dist": "gear_module * (gear1_teeth + gear2_teeth) / 2"
+  },
+  "timeline": [
+    {"op": "spur_gear", "id": "gear1", "module": "gear_module", "teeth": "gear1_teeth",
+     "thickness": "gear_thick", "bore": "8 mm"},
+    {"op": "spur_gear", "id": "gear2", "module": "gear_module", "teeth": "gear2_teeth",
+     "thickness": "gear_thick", "center": ["gear_center_dist", 0], "bore": "10 mm"}
+  ]
+}

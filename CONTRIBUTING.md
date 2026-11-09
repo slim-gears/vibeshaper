@@ -81,16 +81,18 @@ Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake bac
 | `userdata.py` | Where settings and logs are kept |
 | `providers/` | Model provider plugins (Ollama, Gemini) |
 | `tools/` | Tool plugins the model can call (design inspection) |
+| `shapes/` | Shape plugins: ready-made parts as one timeline step (spur gear) |
 | `palette/` | The chat panel |
 
 ### The one rule: the core knows no plugin
 
-Everything specific to a provider or a tool lives in its plugin. The core (`VibeShaper.py`, `llm.py`, `chat.py`, `dsl.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool or a toolkit. A test enforces this.
+Everything specific to a provider, a tool or a shape lives in its plugin. The core (`VibeShaper.py`, `llm.py`, `chat.py`, `dsl.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool, a toolkit or a shape. Tests enforce this.
 
 If a feature differs per provider or per model (thinking, images, tools), add it to the plugin interface (`providers/base.py`, `tools/base.py`) and let plugins report it, rather than checking for a particular provider in the core.
 
 - **New provider**: see [Adding Custom Providers](README.md#-adding-custom-providers).
 - **New tools**: see [Adding Tools](README.md#adding-tools).
+- **New shapes**: see [Adding Shapes](README.md#adding-shapes).
 
 ## Pull requests
 

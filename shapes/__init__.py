@@ -1,0 +1,61 @@
+"""Shape registry. Every module in this package that defines a BaseShape subclass is a plugin;
+none is special, and the registry knows nothing about any of them."""
+import importlib
+import inspect
+import pathlib
+import pkgutil
+from typing import Dict, List, Optional
+
+from .base import BaseShape
+
+_REGISTRY: Dict[str, BaseShape] = {}
+_discovered = False
+
+
+def register_shape(shape: BaseShape) -> None:
+    if not shape.op:
+        raise ValueError(f"Shape {shape} has no 'op' set.")
+    _REGISTRY[shape.op] = shape
+
+
+def unregister_shape(op: str) -> None:
+    _REGISTRY.pop(op, None)
+
+
+def get_shape(op: str) -> Optional[BaseShape]:
+    _auto_discover()
+    return _REGISTRY.get(op)
+
+
+def get_all_shapes() -> List[BaseShape]:
+    """All shapes, ordered by their own `order`, then op."""
+    _auto_discover()
+    return sorted(_REGISTRY.values(), key=lambda s: (s.order, s.op))
+
+
+def prompt() -> str:
+    """The shapes' notes for the system prompt ('' when there are none)."""
+    return '\n'.join(s.prompt.strip('\n') for s in get_all_shapes() if s.prompt and s.prompt.strip())
+
+
+def _auto_discover():
+    global _discovered
+    if _discovered:
+        return
+    _discovered = True
+    pkg_dir = pathlib.Path(__file__).parent
+    for _, module_name, is_pkg in pkgutil.iter_modules([str(pkg_dir)]):
+        if is_pkg or module_name == 'base':
+            continue
+        try:
+            mod = importlib.import_module(f'.{module_name}', package=__package__)
+        except Exception:
+            continue
+        for _, cls in inspect.getmembers(mod, inspect.isclass):
+            if issubclass(cls, BaseShape) and cls is not BaseShape and cls.__module__ == mod.__name__:
+                try:
+                    instance = cls()
+                except Exception:
+                    continue
+                if instance.op and instance.op not in _REGISTRY:
+                    register_shape(instance)

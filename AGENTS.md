@@ -39,6 +39,6 @@ Each rule has a reason. When a situation isn't covered, follow the reason.
 - **Tests** are one plain script, not pytest: `python test_dsl.py`. It prints `ok` when everything passes and stops at the first failure with a traceback. CI runs it on Python 3.11 and 3.14, on Linux and Windows.
 - **Fusion isn't available to the tests.** They use stand-ins for Fusion's API defined in `test_dsl.py`. Anything that builds real geometry must also be tried in Fusion, so say when a change needs that.
 - **Fusion's API may only be called on its main thread.** Work that takes time (talking to a model) runs on a worker thread and asks the main thread to act through Fusion custom events.
-- **The extension points** are `providers/` (AI model providers) and `tools/` (tools the model can call). Each has a base class in its `base.py` and is discovered automatically.
+- **The extension points** are `providers/` (AI model providers), `tools/` (tools the model can call) and `shapes/` (ready-made parts that expand into plain DSL steps). Each has a base class in its `base.py` and is discovered automatically.
 - **The version is never written by hand.** It comes from git tags at build time.
 - **User-visible changes** get a line under *Unreleased* in [CHANGELOG.md](CHANGELOG.md).
