@@ -4,6 +4,8 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Added
 - **Pick edges by the step that made them.** Fillets and chamfers take `"edges": {"feature": "screw_cut", "exclude": "pocket_cut"}` to change only the edges a named step created.
 - **Circular patterns around any point.** `circular_pattern` takes a `"center"`, so a part away from the origin (the second gear of a pair, say) is patterned around its own axis instead of the origin.
@@ -44,6 +46,7 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/slim-gears/vibeshaper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/slim-gears/vibeshaper/releases/tag/v0.2.0
