@@ -459,6 +459,15 @@ Ready-made parts, such as a spur gear, are plugins in the `shapes/` folder. Each
   * `bolt_hole`: clearance holes for metric bolts (M2 to M12), with an optional counterbore, countersink or hex nut trap, sized from ISO tables.
   * `vent_grid`: round, hexagonal (honeycomb) or slot vent holes filling a rectangle; the hole count follows the area.
   * `tslot_profile`: an aluminum T-slot extrusion (2020, 2040, 3030, 4040...) with the real section: rounded corner blocks with lips, a core and bore in each cell, diagonal spars, T-shaped slots and hollows between cells.
+  * Bought parts, each modeled around its own origin with its mounting holes, to design the parts that hold it:
+    * `nema_motor`: a NEMA 14, 17 or 23 stepper motor.
+    * `linear_rail` and `rail_carriage`: an MGN7, MGN9, MGN12 or MGN15 miniature linear guide rail cut to length, and its H or C carriage.
+    * `lead_screw` and `lead_nut`: a T8 trapezoidal lead screw and its flanged (optionally anti-backlash) nut.
+    * `pillow_block`: a KP08 pillow block bearing.
+    * `shaft_coupler`: a flexible shaft coupler.
+    * `spindle`: a DC milling spindle with an ER collet nose.
+
+  Sizes come from the usual catalog tables. Sellers differ, so check them against the parts you receive; every size is a parameter (`<id>_pitch`, `<id>_hole`...) that can be overridden.
 
 ### 5.15. Assemblies: `components` and `instances`
 A design made of separate parts lists them under `components`. Each becomes a Fusion component with its own timeline; identical parts are one component placed several times by `instances`, so the parts list counts them and editing the component changes every copy.
@@ -490,6 +499,31 @@ A design made of separate parts lists them under `components`. Each becomes a Fu
 * Copies can't be mirror images of their component: turn the part instead, or make a separate component. Parts that differ in any size are separate components.
 * Fusion doesn't move a placed copy when a parameter changes. When a parameter an instance's `position` or `rotate` depends on is changed from VibeShaper's parameter list, VibeShaper rebuilds the design so the copies move; a change made in Fusion's own Change Parameters dialog doesn't move them.
 * Part Design documents hold a single component, so a design with `components` can't be built there.
+
+### 5.16. Bill of materials: `bom` and `material`
+A design meant to be built can produce its bill of materials: everything to buy and make, with quantities. Run `python bom.py design.json bom.csv` (no Fusion needed). It writes a CSV with the columns Category, Item, Qty, Unit, Note and Link.
+
+Items come from three places:
+* **Shape steps.** Bought parts (`nema_motor`, `linear_rail`, `tslot_profile`...) list themselves, and a `bolt_hole` with a `"screw"` lists its screws, nuts and washers. Give `"screw"` on one side of a joint only.
+* **A component's `"bom"`**: extra items for that part (a T-nut, grease).
+* **The design's top-level `"bom"`**: anything not modeled (wires, a power supply, consumables).
+
+```json
+"bom": [
+  {"category": "Electronics", "item": "24 V 6 A power supply", "qty": 1, "link": "https://..."},
+  {"category": "Wiring", "item": "4-core 22 AWG cable", "unit": "m", "qty": "x_travel + 400 mm", "round": 0.5}
+]
+```
+* **`category`**, **`item`** *(required strings)*: Items with the same category, item text, unit, note and link are added into one line.
+* **`qty`** *(optional, default 1)*: A number or an expression over the design's parameters. When `unit` is a length (`"mm"`, `"cm"`, `"m"`) and `qty` is an expression, it is a length and is converted to that unit; a plain number is already in it.
+* **`unit`** *(optional string, default `"pcs"`)*.
+* **`length`** *(optional expression)*: The length of one piece. It fills `{length}` (`"300 mm"`) or `{length_mm}` (`"300"`) in the item text, and a negative length counts as positive.
+* **`stock`** *(optional list of mm)*: Lengths sold. The piece's length is rounded up to the next one.
+* **`round`** *(optional number)*: The line's total is rounded up to a multiple of it (`0.5` for half metres of cable).
+* **`whole`** *(optional boolean)*: This item is the bought part itself, so its component isn't also listed as a part to make. Shapes set it.
+* **`note`**, **`link`** *(optional strings)*: A rating or a seller's model number, and where to buy it.
+
+A component's items, and the items of the shapes in its timeline, count once per instance. A shape's items also count once per copy that a later `circular_pattern` or `linear_pattern` makes of it. A component (or a single-part design) that no item marks as `whole` is listed under **Made**, once per instance, with its **`material`** (an optional string on the component, e.g. `"PETG"`) as the note.
 
 ---
 

@@ -266,7 +266,11 @@ Ready-made parts the model can ask for in one step, such as the spur gear (`shap
            params = {f'{gid}_pitch_r': '...'}
            steps = [...]                     # plain DSL steps; give the finishing one the step's id
            return params, steps
+
+       def bom(self, step):                  # optional: what to buy for this step
+           return [{'category': 'Motion', 'item': 'Sprocket, 20 teeth', 'whole': True}]
    ```
+   A bought part returns itself from `bom()` with `"whole": True` (see [the bill of materials](DSL_SPEC.md#516-bill-of-materials-bom-and-material)); a shape that is made, not bought, leaves it out.
 3. VibeShaper discovers it automatically, adds it to the reply schema and the system prompt, and expands it before validating and building.
 
 ---

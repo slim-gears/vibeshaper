@@ -91,6 +91,15 @@ ASSEMBLIES (a design made of separate parts: a frame of profiles, a box with a l
   or make a separate component.
 - The top-level "timeline" may stay empty when everything is in components.
 
+BILL OF MATERIALS (optional: for designs meant to be built, ordered and assembled)
+- Bought parts made by ready-made steps (motors, rails, extrusions...) and screws given on bolt holes are counted
+  automatically, once per instance of their component and per pattern copy.
+- List anything else under "bom", at the top level or on a component (then once per instance):
+  [{"category": "Electronics", "item": "24 V 6 A power supply", "qty": 1, "note": text (optional), "link": url (optional)}]
+  Cables: "unit": "m" and "qty" a length expression, e.g. {"category": "Wiring", "item": "4-core 22 AWG cable",
+  "unit": "m", "qty": "x_travel + 400 mm", "round": 0.5} (rounded up to 0.5 m).
+- A component that isn't a bought part is listed as a part to make; give it "material" (e.g. "PETG").
+
 RULES & BEST PRACTICES
 - NEVER combine two operations into one step! Each operation (`extrude`, `fillet`, `shell`, `chamfer`, etc.) MUST be its own separate entry in the `timeline` array.
 - For hollow boxes or open containers, prefer `shell` with `remove_faces: "top"` over manual pocket cuts!

@@ -28,6 +28,24 @@ SIZES = {
 FITS = ('close', 'normal', 'loose')
 HEADS = ('none', 'counterbore', 'countersink', 'nut_trap')
 
+# Bill of materials: the screw (and nut, washer) that goes into each hole, when the step has "screw".
+SCREW_HEADS = {
+    'socket': 'socket head cap screw (ISO 4762)',
+    'button': 'button head screw (ISO 7380)',
+    'countersunk': 'countersunk screw (ISO 10642)',
+}
+NUTS = {
+    'none': None,
+    'hex': 'hex nut (ISO 4032)',
+    'nyloc': 'nyloc nut (ISO 10511)',
+    't_nut_20': 'T-nut for 20-series slot (6 mm)',
+    't_nut_30': 'T-nut for 30-series slot (8 mm)',
+    't_nut_40': 'T-nut for 40-series slot (10 mm)',
+    'insert': 'heat-set insert',
+}
+SCREW_KEYS = ('length', 'head', 'nut', 'washer')
+STOCK_LENGTHS = [3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 35, 40, 45, 50, 55, 60, 65, 70, 80, 90, 100]
+
 
 def _num(v):
     try:
@@ -57,6 +75,9 @@ class BoltHole(BaseShape):
         'head': {'enum': list(HEADS)},
         'fit': {'enum': list(FITS)},
         'tolerance': {'type': ['string', 'number']},
+        'screw': {'type': 'object', 'properties': {
+            'length': {'type': ['string', 'number']}, 'head': {'enum': list(SCREW_HEADS)},
+            'nut': {'enum': list(NUTS)}, 'washer': {'type': 'boolean'}}},
     }
     prompt = '''{"op": "bolt_hole", "id": name, "size": "M2"|"M2.5"|"M3"|"M4"|"M5"|"M6"|"M8"|"M10"|"M12", "plane": "xy"|"xz"|"yz", "offset": length,
  "points": [[a, b], ...] (or "center": [a, b]), "depth": length,
@@ -66,6 +87,10 @@ class BoltHole(BaseShape):
   use it instead of drawing bolt holes, counterbores or nut traps by hand. Put the sketch plane (plane + offset) on the face
   the bolt enters; "depth" is signed like an extrude distance (negative cuts against the plane's normal, e.g. down from a top face).
   The pocket is cut at that face. The step's "id" names the hole cut.
+  Optional "screw": {"length": length, "head": "socket"|"button"|"countersunk", "nut": "none"|"hex"|"nyloc"|"t_nut_20"|"t_nut_30"|"t_nut_40"|"insert",
+   "washer": true|false} puts one screw per hole (and per copy a pattern makes) into the bill of materials. "length" is the
+   shortest that reaches; the next stock length is ordered. Defaults: head "countersunk" for a countersink, else "socket";
+   nut "hex" for a nut trap, else "none". Give "screw" on one side of a joint only, so screws aren't counted twice.
   Example: {"op": "bolt_hole", "id": "mount_bolts", "size": "M5", "plane": "xy", "offset": "base_thick", "depth": "-base_thick",
    "head": "nut_trap", "points": [["-hole_off", "-hole_off"], ["hole_off", "-hole_off"], ["hole_off", "hole_off"], ["-hole_off", "hole_off"]]}'''
 
@@ -88,6 +113,19 @@ class BoltHole(BaseShape):
             raise ValueError(f'{where}: points must be a non-empty list of [a, b]')
         if _num(step['depth']) == 0:
             raise ValueError(f'{where}: depth must not be 0')
+        if 'screw' in step:
+            sc = step['screw']
+            if not isinstance(sc, dict) or 'length' not in sc:
+                raise ValueError(f'{where}: screw must be an object with a length')
+            extra = [k for k in sc if k not in SCREW_KEYS]
+            if extra:
+                raise ValueError(f'{where}: unknown screw keys {extra}; allowed: {SCREW_KEYS}')
+            if sc.get('head', 'socket') not in SCREW_HEADS:
+                raise ValueError(f'{where}: screw head must be one of {tuple(SCREW_HEADS)}')
+            if sc.get('nut', 'none') not in NUTS:
+                raise ValueError(f'{where}: screw nut must be one of {tuple(NUTS)}')
+            if not isinstance(sc.get('washer', False), bool):
+                raise ValueError(f'{where}: screw washer must be true or false')
 
     def expand(self, step):
         gid = step['id']
@@ -141,3 +179,19 @@ class BoltHole(BaseShape):
                  'mode': 'cut'},
             ]
         return params, steps
+
+    def bom(self, step):
+        sc = step.get('screw')
+        if not sc:
+            return []
+        size, head = step['size'], step.get('head', 'none')
+        count = len(_points(step))
+        screw_head = sc.get('head', 'countersunk' if head == 'countersink' else 'socket')
+        nut = sc.get('nut', 'hex' if head == 'nut_trap' else 'none')
+        items = [{'category': 'Fasteners', 'item': f'{size}x{{length_mm}} {SCREW_HEADS[screw_head]}',
+                  'qty': count, 'length': sc['length'], 'stock': STOCK_LENGTHS}]
+        if NUTS[nut]:
+            items.append({'category': 'Fasteners', 'item': f'{size} {NUTS[nut]}', 'qty': count})
+        if sc.get('washer'):
+            items.append({'category': 'Fasteners', 'item': f'{size} washer (ISO 7089)', 'qty': count})
+        return items

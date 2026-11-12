@@ -372,3 +372,7 @@ class TSlotProfile(BaseShape):
                 {'op': 'extrude', 'id': n('hole_cut'), 'sketch': n('hole_sk'), 'distance': n('length'), 'mode': 'cut'},
             ]
         return params, steps
+
+    def bom(self, step):
+        return [{'category': 'Frame', 'item': f'{step["series"]} aluminium T-slot extrusion, cut to {{length}}',
+                 'length': step['length'], 'whole': True}]

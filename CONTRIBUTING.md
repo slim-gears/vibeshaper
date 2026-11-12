@@ -78,10 +78,11 @@ Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake bac
 | `llm.py` | Talking to the model: system prompt, retries, the tool loop, logging |
 | `dsl.py` | Validating the JSON design and building it in Fusion ([DSL_SPEC.md](DSL_SPEC.md)) |
 | `chat.py` | Chats, versions and saving them in the document |
+| `bom.py` | The bill of materials of a design, as CSV; also runs on the command line |
 | `userdata.py` | Where settings and logs are kept |
 | `providers/` | Model provider plugins (Ollama, Gemini) |
 | `tools/` | Tool plugins the model can call (design inspection) |
-| `shapes/` | Shape plugins: ready-made parts as one timeline step (spur gear) |
+| `shapes/` | Shape plugins: ready-made parts as one timeline step (spur gear, motors, rails) |
 | `palette/` | The chat panel |
 
 ### The one rule: the core knows no plugin

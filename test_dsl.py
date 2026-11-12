@@ -1416,7 +1416,7 @@ import math
 import shapes as shape_registry
 _ops = [s.op for s in shape_registry.get_all_shapes()]
 assert 'spur_gear' in _ops
-for _f in ('dsl.py', 'llm.py', 'VibeShaper.py', 'shapes/__init__.py', 'shapes/base.py'):
+for _f in ('dsl.py', 'llm.py', 'VibeShaper.py', 'bom.py', 'shapes/__init__.py', 'shapes/base.py'):
     _src = (_HERE / _f).read_text(encoding='utf-8')
     for _op in _ops:
         assert not _re.search(rf'\b{_re.escape(_op)}\b', _src), f'{_f} mentions the shape {_op!r}'
@@ -1591,6 +1591,163 @@ _fails(_shape('vent_grid', id='v', width=5, height=40, size=5, depth=-2), 'at le
 _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, hole='slot'), 'length')
 _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, length=4, depth=-2, hole='slot'), 'more than its width')
 _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, rows=0), 'rows')
+
+
+# Bill of materials: expressions are evaluated without Fusion
+import bom as bom_mod
+_bev = bom_mod.Evaluator({'a': '10 mm', 'b': 'a * 2 + 1 cm', 'n': '4', 'ang': '90 deg', 'loop': 'loop + 1'})
+assert _bev('b') == 30 and _bev('2 m') == 2000 and _bev('1 in') == 25.4 and _bev(7) == 7
+assert _bev('n ^ 2') == 16 and _bev('floor(a / 3 mm)') == 3 and abs(_bev('sin(ang)') - 1) < 1e-12
+assert _bev('max(a, 12 mm) + abs(-1)') == 13 and _bev('-a') == -10
+for _bad, _words in (('nope + 1', "'nope'"), ('loop', 'depends on itself'), ('__import__("os")', 'cannot evaluate'),
+                     ('a +', 'cannot read')):
+    try:
+        _bev(_bad)
+        assert False, _bad
+    except ValueError as err:
+        assert _words in str(err), str(err)
+
+
+def _bom(d):
+    return {(r['Category'], r['Item']): r for r in bom_mod.collect(d)}
+
+
+_plate = lambda **kw: dict({"id": "plate", "name": "Plate", "material": "PETG", "timeline": [
+    {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "center_rectangle", "center": [0, 0],
+                                                             "width": 60, "height": 40}]},
+    {"op": "extrude", "id": "e", "sketch": "s", "distance": "t", "mode": "new_body"},
+    {"op": "bolt_hole", "id": "h", "size": "M5", "offset": "t", "depth": "-t", "points": [[-20, 0], [20, 0]],
+     "screw": {"length": "t + 5.5 mm", "nut": "t_nut_20", "washer": True}},
+    {"op": "linear_pattern", "feature": "h", "direction": "x", "distance": 5, "quantity": 2,
+     "direction2": "y", "quantity2": 3, "distance2": 5}]}, **kw)
+_asm = {"parameters": {"t": "6 mm", "post_h": "200 mm", "travel": "200 mm"}, "timeline": [],
+        "components": [_plate(),
+                       {"id": "post", "name": "Post", "timeline": [
+                           {"op": "tslot_profile", "id": "p", "series": "2040", "length": "-post_h"}]},
+                       {"id": "beam", "name": "Beam", "timeline": [
+                           {"op": "tslot_profile", "id": "bp", "series": "2040", "length": "post_h"}],
+                        "bom": [{"category": "Fasteners", "item": "M5 T-nut for 20-series slot (6 mm)", "qty": 2}]}],
+        "instances": [{"component": "plate"}, {"component": "plate"}, {"component": "post"}],
+        "bom": [{"category": "Wiring", "item": "4-core cable", "qty": "travel + 400 mm", "unit": "m", "round": 0.5},
+                {"category": "Wiring", "item": "Heat-shrink", "qty": 1.5, "unit": "m", "note": "3 mm"},
+                {"category": "Electronics", "item": "24 V supply", "link": "https://example.com/psu"}]}
+_b = _bom(_asm)
+# 2 holes x 6 pattern copies x 2 plates; 6 + 5.5 = 11.5 mm rounds up to the 12 mm stock screw
+assert _b[('Fasteners', 'M5x12 socket head cap screw (ISO 4762)')]['Qty'] == 24
+assert _b[('Fasteners', 'M5 washer (ISO 7089)')]['Qty'] == 24
+assert _b[('Fasteners', 'M5 T-nut for 20-series slot (6 mm)')]['Qty'] == 26  # a component's own item adds to it
+_ext = _b[('Frame', '2040 aluminium T-slot extrusion, cut to 200 mm')]
+assert _ext['Qty'] == 2 and _ext['Unit'] == 'pcs'                     # post (signed length) + beam: one line
+assert _b[('Wiring', '4-core cable')]['Qty'] == 1.0 and _b[('Wiring', '4-core cable')]['Unit'] == 'm'  # 0.6 -> 1
+assert _b[('Wiring', 'Heat-shrink')]['Qty'] == 1.5                    # a plain number is in the item's unit
+assert _b[('Electronics', '24 V supply')]['Link'] == 'https://example.com/psu'
+assert _b[('Made', 'Plate')]['Qty'] == 2 and _b[('Made', 'Plate')]['Note'] == 'PETG'
+assert ('Made', 'Post') not in _b and ('Made', 'Beam') not in _b      # a bought extrusion isn't made
+_rows = bom_mod.collect(_asm)
+assert [r['Category'] for r in _rows][-1] == 'Made' and _rows[0]['Category'] == 'Electronics'
+_csv = bom_mod.to_csv(_rows)
+assert _csv.splitlines()[0] == 'Category,Item,Qty,Unit,Note,Link' and ',24,pcs,' in _csv
+_single = {"name": "Bracket", "parameters": {"t": "6 mm"}, "timeline": _plate()['timeline']}
+assert _bom(_single)[('Made', 'Bracket')]['Qty'] == 1
+assert _bom(_single)[('Fasteners', 'M5x12 socket head cap screw (ISO 4762)')]['Qty'] == 12
+_bom_dir = pathlib.Path(tempfile.mkdtemp())
+(_bom_dir / 'd.json').write_text(json.dumps(_asm))
+assert bom_mod.main(['bom.py', str(_bom_dir / 'd.json'), str(_bom_dir / 'd.csv')]) == 0
+assert (_bom_dir / 'd.csv').read_text(encoding='utf-8-sig') == _csv
+try:
+    bom_mod.collect(dict(_asm, bom=[{"category": "X", "item": "Rod {length}", "length": "5 m", "stock": [1000]}]))
+    assert False
+except ValueError as err:
+    assert 'longer than any stock length' in str(err), str(err)
+
+# The bom keys are checked like the rest of the design
+_bad_bom = lambda items: dict(_asm, bom=items)
+_fails(_bad_bom([{"item": "x"}]), 'missing category')
+_fails(_bad_bom([{"category": "X", "item": "x", "price": 3}]), 'unknown keys')
+_fails(_bad_bom([{"category": "X", "item": "Rod {length}"}]), 'no length')
+_fails(_bad_bom([{"category": "X", "item": "x", "length": 5, "stock": [0]}]), 'stock')
+_fails(_bad_bom([{"category": "X", "item": "x", "stock": [100]}]), 'stock needs a length')
+_fails(_bad_bom([{"category": "X", "item": "x", "whole": "yes"}]), 'whole')
+_fails(_bad_bom([{"category": "X", "item": "x", "round": 0}]), 'round')
+_fails(_bad_bom({"category": "X"}), 'must be a list')
+_fails(dict(_asm, components=[_plate(material="")]), 'material')
+_fails(dict(_asm, components=[_plate(bom=[{"category": "X"}])]), 'components[0].bom[0]: missing item')
+assert 'bom' in dsl_mod.JSON_SCHEMA['properties'] and 'bom' in \
+    dsl_mod.JSON_SCHEMA['properties']['components']['items']['properties']
+
+# Bolt hole screws: defaults follow the hole's head; bad screws are refused
+_sb = lambda **kw: shape_registry.get_shape('bolt_hole').bom(dict({"id": "b", "size": "M3", "depth": 5}, **kw))
+assert _sb() == []
+assert [i['item'] for i in _sb(head='countersink', screw={"length": 10})] == \
+    ['M3x{length_mm} countersunk screw (ISO 10642)']
+assert [i['item'] for i in _sb(head='nut_trap', screw={"length": 10}, points=[[0, 0], [5, 0], [9, 0]])] == \
+    ['M3x{length_mm} socket head cap screw (ISO 4762)', 'M3 hex nut (ISO 4032)']
+assert _sb(head='nut_trap', screw={"length": 10, "nut": "none"})[0]['qty'] == 1 and \
+    len(_sb(head='nut_trap', screw={"length": 10, "nut": "none"})) == 1
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, screw={}), 'screw must be an object with a length')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, screw={"length": 8, "head": "hex"}), 'screw head')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, screw={"length": 8, "nut": "wing"}), 'screw nut')
+_fails(_shape('bolt_hole', id='b', size='M5', depth=5, screw={"length": 8, "thread": 1}), 'unknown screw keys')
+
+# Bought parts: each is its own whole bill-of-materials item, and expands into plain steps
+_PARTS = {'nema_motor': dict(size='17', length=40), 'linear_rail': dict(series='MGN12', length=300),
+          'rail_carriage': dict(series='MGN12'), 'lead_screw': dict(length=290), 'lead_nut': {},
+          'pillow_block': {}, 'shaft_coupler': {}, 'spindle': {}}
+for _op, _kw in _PARTS.items():
+    assert _op in _ops and _op in llm.SYSTEM, _op
+    _sh = shape_registry.get_shape(_op)
+    _items = _sh.bom(dict(_kw, id='q', note='from seller A'))
+    dsl_mod.check_bom(_items, _op)
+    assert len(_items) == 1 and _items[0]['whole'] is True and _items[0]['note'] == 'from seller A', _op
+    _x, _by, _ = _expand(_op, id='q', **_kw)
+    assert _x['timeline'][-1]['id'] == 'q' and _x['timeline'][1]['mode'] == 'new_body', _op
+    assert not any(shape_registry.get_shape(s['op']) for s in _x['timeline']), _op
+    assert all(k.startswith('q_') for k in _x['parameters']), _op
+    _fails(_shape(_op, id='bad id', **_kw), 'snake_case')
+    _fails(_shape(_op, id='q', note=3, **_kw), 'note')
+
+_m = _shape('nema_motor', id='m', size=17, length='motor_len')  # a number size works too
+_m['parameters'] = {'motor_len': '48 mm'}
+validate(_m)
+assert dsl_mod.expand_shapes(_m)['parameters']['m_length'] == '(motor_len)'
+_x, _by, (_v, _ev) = _expand('nema_motor', id='m', size='17', length=40)
+assert _v['m_pitch'] == 31.0
+assert {(_ev(c['center'][0]), _ev(c['center'][1])) for c in _by['m_hole_sk']['entities']} == \
+    {(15.5, 15.5), (15.5, -15.5), (-15.5, 15.5), (-15.5, -15.5)}
+_fails(_shape('nema_motor', id='m', size='19', length=40), 'size must be')
+_fails(_shape('nema_motor', id='m', size='17', length=-40), 'length must be more than 0')
+_x, _by, (_v, _ev) = _expand('linear_rail', id='r', series='MGN12', length=300)
+assert _v['r_count'] == 12 and _v['r_start'] == 12.5                # holes centered: (300 - 11 x 25) / 2
+assert _by['r']['op'] == 'linear_pattern' and _by['r']['quantity'] == 'r_count'
+assert _by['r_sk']['plane'] == 'yz' and _by['r_bar']['distance'] == 'r_length'
+_fails(_shape('linear_rail', id='r', series='MGN12', length=40), 'two hole pitches')
+_fails(_shape('linear_rail', id='r', series='MGN20', length=300), 'series must be')
+_x, _by, (_v, _ev) = _expand('rail_carriage', id='c', series='MGN12', block='C')
+assert _v['c_length'] == 34.7 and _v['c_hole_c'] == 15 and _v['c_hole_depth'] == 4.0
+assert _ev(_by['c_channel']['distance']) < _v['c_height'] - _v['c_gap']   # the channel leaves a top
+assert _ev(_by['c']['distance']) + _v['c_height'] - _v['c_rail_h'] > 0    # the holes stop above the rail
+assert shape_registry.get_shape('rail_carriage').bom({"id": "c", "series": "MGN9", "block": "C"})[0]['item'] == \
+    'MGN9C carriage'
+_scr = _bom({"parameters": {}, "timeline": [{"op": "lead_screw", "id": "s", "length": 290, "lead": 8}]})
+assert ('Motion', 'T8 lead screw, lead 8 mm, 300 mm') in _scr        # rounded up to the stock length
+assert ('Made', 'Main part') not in _scr
+_fails(_shape('lead_screw', id='s', length=100, lead='fast'), 'lead must be')
+_x, _by, (_v, _ev) = _expand('lead_nut', id='n', anti_backlash=False)
+assert _v['n_length'] == 15 and _ev(_by['n_body_ext']['distance']) == -11.5
+_fails(_shape('lead_nut', id='n', anti_backlash='yes'), 'anti_backlash')
+_x, _by, (_v, _ev) = _expand('pillow_block', id='k')
+assert _by['k_housing_sk']['plane'] == 'xz' and _ev(_by['k_housing_sk']['offset']) == -6.5
+assert _v['k_center_h'] + _v['k_housing'] / 2 == 29                  # KP08: 29 mm tall
+_fails(_shape('pillow_block', id='k', model='KP10'), 'model must be')
+_x, _by, (_v, _ev) = _expand('shaft_coupler', id='cp', bore1=6.35, bore2=8)
+assert _v['cp_bore1'] == 6.35 and _ev(_by['cp']['distance']) == -12.5
+_fails(_shape('shaft_coupler', id='cp', bore2=20), 'smaller than the diameter')
+_fails(_shape('shaft_coupler', id='cp', bore1='d'), 'bore1 must be')
+_x, _by, (_v, _ev) = _expand('spindle', id='sp', diameter=65, collet='ER16')
+assert _v['sp_diameter'] == 65 and _ev(_by['sp']['distance']) == -30
+assert shape_registry.get_shape('spindle').bom({"id": "sp", "diameter": 65, "collet": "ER16"})[0]['item'] == \
+    'ER16 DC spindle, 65 mm body'
+_fails(_shape('spindle', id='sp', collet='ER32'), 'collet must be')
 
 
 def _crosses(p, q, r, s):

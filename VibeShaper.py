@@ -29,7 +29,8 @@ def _reload_plugins(package):
     """Reload a plugin package's interface (base), every plugin, then the registry (which re-discovers
     them). Reloading only the package would leave old plugin code in place after Stop/Run."""
     prefix = package.__name__ + '.'
-    subs = sorted((n for n in list(sys.modules) if n.startswith(prefix)), key=lambda n: n != prefix + 'base')
+    subs = sorted((n for n in list(sys.modules) if n.startswith(prefix)),  # base, then _helpers, then plugins
+                  key=lambda n: (n != prefix + 'base', not n[len(prefix):].startswith('_')))
     for name in subs:
         importlib.reload(sys.modules[name])
     importlib.reload(package)

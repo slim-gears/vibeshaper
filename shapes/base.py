@@ -26,3 +26,12 @@ class BaseShape:
         (fillets, edge selectors, combines) can refer to the shape by that id.
         """
         raise NotImplementedError
+
+    def bom(self, step: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """What to buy for one such step: bill-of-materials items (see "bom" in DSL_SPEC.md).
+
+        Quantities and lengths may be expressions over the design's parameters. Mark the item
+        that is the bought part itself (a motor, a rail) with "whole": True, so the component
+        holding it isn't also listed as a part to make. Most shapes are made, not bought: [].
+        """
+        return []

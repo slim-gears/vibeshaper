@@ -161,14 +161,58 @@ def _add_shapes_to_schema(schema):
 
 
 _add_shapes_to_schema(JSON_SCHEMA)
+BOM_UNITS_LENGTH = {'mm': 1.0, 'cm': 10.0, 'm': 1000.0}
+BOM_KEYS = ('category', 'item', 'qty', 'unit', 'length', 'stock', 'round', 'whole', 'note', 'link')
+_JS_BOM = {'type': 'array', 'items': {'type': 'object', 'properties': {
+    'category': {'type': 'string'}, 'item': {'type': 'string'}, 'qty': _JS_LEN, 'unit': {'type': 'string'},
+    'length': _JS_LEN, 'stock': {'type': 'array', 'items': {'type': 'number'}}, 'round': {'type': 'number'},
+    'whole': {'type': 'boolean'}, 'note': {'type': 'string'}, 'link': {'type': 'string'},
+}, 'required': ['category', 'item']}}
+JSON_SCHEMA['properties']['bom'] = _JS_BOM
 JSON_SCHEMA['properties']['components'] = {
     'type': 'array',
     'items': {'type': 'object', 'properties': {
         'id': {'type': 'string'},
         'name': {'type': 'string'},
+        'material': {'type': 'string'},
+        'bom': _JS_BOM,
         'timeline': JSON_SCHEMA['properties']['timeline'],
     }, 'required': ['id', 'timeline']},
 }
+
+
+def check_bom(items, where):
+    """Structural check of bill-of-materials items (a design's, a component's or a shape's)."""
+    if not isinstance(items, list):
+        raise ValueError(f'{where}: must be a list of items')
+    for k, it in enumerate(items):
+        w = f'{where}[{k}]'
+        _need(it, w, 'category', 'item')
+        extra = [key for key in it if key not in BOM_KEYS]
+        if extra:
+            raise ValueError(f'{w}: unknown keys {extra}; allowed: {BOM_KEYS}')
+        for key in ('category', 'item'):
+            if not isinstance(it[key], str) or not it[key].strip():
+                raise ValueError(f'{w}: {key} must be a non-empty string')
+        for key in ('unit', 'note', 'link'):
+            if key in it and not isinstance(it[key], str):
+                raise ValueError(f'{w}: {key} must be a string')
+        for key in ('qty', 'length'):
+            if key in it and (isinstance(it[key], bool) or not isinstance(it[key], (str, int, float))):
+                raise ValueError(f'{w}: {key} must be a number or an expression')
+        if '{length' in it['item'] and 'length' not in it:
+            raise ValueError(f'{w}: item uses {{length}} but has no length')
+        stock = it.get('stock', [])
+        if not (isinstance(stock, list) and all(isinstance(s, (int, float)) and not isinstance(s, bool) and s > 0
+                                                for s in stock)):
+            raise ValueError(f'{w}: stock must be a list of lengths in mm')
+        if stock and 'length' not in it:
+            raise ValueError(f'{w}: stock needs a length')
+        if 'round' in it and (isinstance(it['round'], bool) or not isinstance(it['round'], (int, float))
+                              or it['round'] <= 0):
+            raise ValueError(f'{w}: round must be a positive number')
+        if 'whole' in it and not isinstance(it['whole'], bool):
+            raise ValueError(f'{w}: whole must be true or false')
 JSON_SCHEMA['properties']['instances'] = {
     'type': 'array',
     'items': {'type': 'object', 'properties': {
@@ -288,6 +332,8 @@ def validate(d):
             raise ValueError(f'parameters: bad name {k!r}')
         if not isinstance(v, (str, int, float)):
             raise ValueError(f'parameters.{k}: must be a string or number')
+    if 'bom' in d:
+        check_bom(d['bom'], 'bom')
     tl = d.get('timeline', [])
     if 'components' in d:
         _validate_assembly(d, params)
@@ -319,6 +365,10 @@ def _validate_assembly(d, params):
         ids.add(c['id'])
         if 'name' in c and (not isinstance(c['name'], str) or not c['name'].strip()):
             raise ValueError(f'{where}: name must be a non-empty string')
+        if 'material' in c and (not isinstance(c['material'], str) or not c['material'].strip()):
+            raise ValueError(f'{where}: material must be a non-empty string')
+        if 'bom' in c:
+            check_bom(c['bom'], f'{where}.bom')
         if not isinstance(c['timeline'], list) or not c['timeline']:
             raise ValueError(f'{where}: timeline must be a non-empty list')
         _validate_steps(c['timeline'], f'{where}.timeline', params)
