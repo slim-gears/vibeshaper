@@ -4,6 +4,7 @@ validate() is pure stdlib (testable outside Fusion); execute() needs Fusion's ad
 All lengths default to mm. Any length may be a number, a literal ("20 mm") or an
 expression over user parameters ("box_width - 2 * wall_thick").
 """
+import json
 import math
 import re
 
@@ -160,6 +161,24 @@ def _add_shapes_to_schema(schema):
 
 
 _add_shapes_to_schema(JSON_SCHEMA)
+JSON_SCHEMA['properties']['components'] = {
+    'type': 'array',
+    'items': {'type': 'object', 'properties': {
+        'id': {'type': 'string'},
+        'name': {'type': 'string'},
+        'timeline': JSON_SCHEMA['properties']['timeline'],
+    }, 'required': ['id', 'timeline']},
+}
+JSON_SCHEMA['properties']['instances'] = {
+    'type': 'array',
+    'items': {'type': 'object', 'properties': {
+        'component': {'type': 'string'},
+        'id': {'type': 'string'},
+        'position': {'type': 'array', 'items': _JS_LEN, 'minItems': 3, 'maxItems': 3},
+        'rotate': {'type': 'array', 'items': {'type': 'object', 'properties': {
+            'axis': {'enum': ['x', 'y', 'z']}, 'angle': _JS_LEN}, 'required': ['axis', 'angle']}},
+    }, 'required': ['component']},
+}
 
 
 def shapes_prompt():
@@ -170,26 +189,44 @@ def shapes_prompt():
 def expand_shapes(d):
     """Replace each shape step (an op a shape plugin adds) with the parameters and plain steps
     that build it. Other steps are kept as the same objects. Returns d itself when there are none."""
-    tl = d.get('timeline') if isinstance(d, dict) else None
-    if not isinstance(tl, list) or not any(isinstance(s, dict) and shapes.get_shape(s.get('op')) for s in tl):
+    def has_shape(tl):
+        return isinstance(tl, list) and any(isinstance(s, dict) and shapes.get_shape(s.get('op')) for s in tl)
+
+    if not isinstance(d, dict):
+        return d
+    comps = d.get('components')
+    comps = comps if isinstance(comps, list) else []
+    if not has_shape(d.get('timeline')) and not any(isinstance(c, dict) and has_shape(c.get('timeline'))
+                                                    for c in comps):
         return d
     params = dict(d.get('parameters') or {})
-    steps = []
-    for i, s in enumerate(tl):
-        shape = shapes.get_shape(s.get('op')) if isinstance(s, dict) else None
-        if not shape:
-            steps.append(s)
-            continue
-        where = f'timeline[{i}] ({s["op"]})'
-        shape.validate(s, where)
-        new_params, new_steps = shape.expand(s)
-        clash = [k for k in new_params if k in params]
-        if clash:
-            raise ValueError(f'{where}: parameters {clash} already exist; give this step another id')
-        params.update(new_params)
-        steps.extend(new_steps)
+
+    def expand(tl, label):
+        if not has_shape(tl):
+            return tl
+        steps = []
+        for i, s in enumerate(tl):
+            shape = shapes.get_shape(s.get('op')) if isinstance(s, dict) else None
+            if not shape:
+                steps.append(s)
+                continue
+            where = f'{label}[{i}] ({s["op"]})'
+            shape.validate(s, where)
+            new_params, new_steps = shape.expand(s)
+            clash = [k for k in new_params if k in params]
+            if clash:
+                raise ValueError(f'{where}: parameters {clash} already exist; give this step another id')
+            params.update(new_params)
+            steps.extend(new_steps)
+        return steps
+
     out = dict(d)
-    out['parameters'], out['timeline'] = params, steps
+    if 'timeline' in d:
+        out['timeline'] = expand(d['timeline'], 'timeline')
+    if 'components' in d:
+        out['components'] = [dict(c, timeline=expand(c.get('timeline'), f'components[{k}].timeline'))
+                             if isinstance(c, dict) else c for k, c in enumerate(comps)]
+    out['parameters'] = params
     return out
 
 
@@ -251,15 +288,76 @@ def validate(d):
             raise ValueError(f'parameters: bad name {k!r}')
         if not isinstance(v, (str, int, float)):
             raise ValueError(f'parameters.{k}: must be a string or number')
-    tl = d.get('timeline')
-    if not isinstance(tl, list) or not tl:
+    tl = d.get('timeline', [])
+    if 'components' in d:
+        _validate_assembly(d, params)
+        if not isinstance(tl, list):
+            raise ValueError('timeline must be a list')
+    elif not isinstance(tl, list) or not tl:
         raise ValueError('timeline must be a non-empty list')
+    elif 'instances' in d:
+        raise ValueError('instances need components: place copies of a component listed in "components"')
+    if tl:
+        _validate_steps(tl, 'timeline', params)
 
+
+def _validate_assembly(d, params):
+    """components: each its own timeline (own sketch and feature ids); instances: where copies go."""
+    comps = d['components']
+    if not isinstance(comps, list) or not comps:
+        raise ValueError('components must be a non-empty list')
+    ids = set()
+    for k, c in enumerate(comps):
+        where = f'components[{k}]'
+        if not isinstance(c, dict):
+            raise ValueError(f'{where}: must be an object')
+        _need(c, where, 'id', 'timeline')
+        if not isinstance(c['id'], str) or not NAME_RE.match(c['id']):
+            raise ValueError(f'{where}: id must be a snake_case name')
+        if c['id'] in ids:
+            raise ValueError(f'{where}: duplicate component id {c["id"]!r}')
+        ids.add(c['id'])
+        if 'name' in c and (not isinstance(c['name'], str) or not c['name'].strip()):
+            raise ValueError(f'{where}: name must be a non-empty string')
+        if not isinstance(c['timeline'], list) or not c['timeline']:
+            raise ValueError(f'{where}: timeline must be a non-empty list')
+        _validate_steps(c['timeline'], f'{where}.timeline', params)
+    insts = d.get('instances', [])
+    if not isinstance(insts, list):
+        raise ValueError('instances must be a list')
+    inst_ids = set()
+    for j, inst in enumerate(insts):
+        where = f'instances[{j}]'
+        if not isinstance(inst, dict):
+            raise ValueError(f'{where}: must be an object')
+        _need(inst, where, 'component')
+        if inst['component'] not in ids:
+            raise ValueError(f'{where}: component {inst["component"]!r} is not in components; '
+                             f'known: {sorted(ids)}')
+        if 'id' in inst:
+            if not isinstance(inst['id'], str) or not NAME_RE.match(inst['id']):
+                raise ValueError(f'{where}: id must be a snake_case name')
+            if inst['id'] in inst_ids:
+                raise ValueError(f'{where}: duplicate instance id {inst["id"]!r}')
+            inst_ids.add(inst['id'])
+        pos = inst.get('position', [0, 0, 0])
+        if not (isinstance(pos, list) and len(pos) == 3 and all(isinstance(v, (str, int, float)) for v in pos)):
+            raise ValueError(f'{where}: position must be [x, y, z]')
+        rot = inst.get('rotate', [])
+        if not isinstance(rot, list):
+            raise ValueError(f'{where}: rotate must be a list of {{"axis": "x"|"y"|"z", "angle": angle}}')
+        for r in rot:
+            if not (isinstance(r, dict) and r.get('axis') in AXES and isinstance(r.get('angle'), (str, int, float))):
+                raise ValueError(f'{where}: rotate must be a list of {{"axis": "x"|"y"|"z", "angle": angle}}')
+
+
+def _validate_steps(tl, label, params):
+    """Check one timeline. Sketch and feature ids are its own (each component has its own)."""
     sketches = set()
     features = set()
 
     for i, s in enumerate(tl):
-        where = f'timeline[{i}]'
+        where = f'{label}[{i}]'
         _need(s, where, 'op')
         op = s['op']
         if op not in VALID_OPS:
@@ -787,19 +885,32 @@ def disambiguate_parameters(d, existing_names):
             return {k: remap_val(item) for k, item in v.items()}
         return v
 
-    return {
-        **d,
-        'parameters': {param_map[k]: remap_val(v) for k, v in params.items()},
-        'timeline': [remap_val(step) for step in d['timeline']],
-    }
+    out = {**d, 'parameters': {param_map[k]: remap_val(v) for k, v in params.items()}}
+    if 'timeline' in d:
+        out['timeline'] = [remap_val(step) for step in d['timeline']]
+    if 'components' in d:  # ids are kept: only timelines and positions hold expressions
+        out['components'] = [dict(c, timeline=[remap_val(step) for step in c['timeline']])
+                             for c in d['components']]
+    if 'instances' in d:
+        out['instances'] = [dict(inst, **{k: remap_val(inst[k]) for k in ('position', 'rotate') if k in inst})
+                            for inst in d['instances']]
+    return out
 
 
 def _is_angle_param(name, expr, valid_as_length):
-    """An angle parameter: its name says so, or it mentions deg/rad and isn't a length
-    ("pitch_r * cos(20 deg)" is a length)."""
+    """An angle parameter: it mentions deg/rad and isn't a length ("pitch_r * cos(20 deg)" is a
+    length), or its name says so and it isn't clearly a length ("draft_angle": "5" is an angle;
+    a rack angle's "angle_t": "2 mm" or "angle_face + angle_t" are lengths)."""
+    low = expr.lower()
+    if re.search(r'\d\s*(mm|cm|m|in)\b', low):
+        return False
     if 'angle' in name.lower():
-        return True
-    mentions = re.search(r'\b(deg|rad)\b', expr.lower()) is not None
+        try:
+            float(low)
+            return True  # a bare number
+        except ValueError:
+            return not valid_as_length
+    mentions = re.search(r'\b(deg|rad)\b', low) is not None
     return mentions and not valid_as_length
 
 
@@ -919,6 +1030,75 @@ def ensure_component(design, occ_token, name):
     return occ
 
 
+def placement_parameters(d):
+    """Parameters that an instance's position or turn depends on, directly or through other
+    parameters. Fusion doesn't move an occurrence when they change, so the design is rebuilt."""
+    params = d.get('parameters') or {}
+    names = set(params)
+
+    def refs(v):
+        return {w for w in re.findall(r'[A-Za-z_][A-Za-z0-9_]*', json.dumps(v)) if w in names}
+
+    todo = refs([[i.get('position'), i.get('rotate')] for i in d.get('instances') or []])
+    found = set()
+    while todo:
+        n = todo.pop()
+        if n not in found:
+            found.add(n)
+            todo |= refs(params[n])
+    return found
+
+
+def _placement(inst, length, angle):
+    """An instance's turns [(axis, radians)] and its position (x, y, z), evaluated with
+    length(expr) and angle(expr). Turns are about the world axes through the component's own
+    origin, in order; then the component is moved to the position."""
+    turns = [(r['axis'], angle(r['angle'])) for r in inst.get('rotate', [])]
+    return turns, tuple(length(v) for v in inst.get('position', [0, 0, 0]))
+
+
+def _placement_matrix(inst, length, angle):
+    import adsk.core
+    turns, (x, y, z) = _placement(inst, length, angle)
+    m = adsk.core.Matrix3D.create()
+    origin = adsk.core.Point3D.create(0, 0, 0)
+    vec = {'x': (1, 0, 0), 'y': (0, 1, 0), 'z': (0, 0, 1)}
+    for axis, a in turns:
+        r = adsk.core.Matrix3D.create()
+        r.setToRotation(a, adsk.core.Vector3D.create(*vec[axis]), origin)
+        m.transformBy(r)  # applied after the turns so far
+    m.translation = adsk.core.Vector3D.create(x, y, z)
+    return m
+
+
+def _add_occurrences(parent, components, instances, placement):
+    """One occurrence per instance in `parent` (a component with no instances gets one where it
+    was modeled). Copies share their component, so editing it changes them all.
+    Returns ([(component spec, Component)] in the order of `components`, [occurrences])."""
+    made, occs = [], []
+    for c in components:
+        insts = [x for x in instances if x['component'] == c['id']] or [{}]
+        comp = None
+        for inst in insts:
+            if comp is None:
+                occ = parent.occurrences.addNewComponent(placement(inst))
+                comp = occ.component
+                try:
+                    comp.name = c.get('name') or c['id']
+                except Exception:
+                    pass
+            else:
+                occ = parent.occurrences.addExistingComponent(comp, placement(inst))
+            occs.append(occ)
+            if inst.get('id'):
+                try:
+                    occ.name = inst['id']
+                except Exception:
+                    pass  # some Fusion versions name occurrences themselves ("post:2")
+        made.append((c, comp))
+    return made, occs
+
+
 class ReplaceError(RuntimeError):
     """The previous version couldn't be removed. Not the design's fault, so not for the model to fix."""
 
@@ -946,8 +1126,9 @@ def _delete_group_contents(design, g):
     return True
 
 
-def delete_version(design, group_name, param_names=()):
-    """Remove a previous build: its timeline group (with contents) and its user parameters.
+def delete_version(design, group_name, param_names=(), occurrences=()):
+    """Remove a previous build: its timeline group (with contents), the component occurrences it
+    placed (by entity token; deleting the group usually removes them already) and its user parameters.
 
     Call inside the same command as the rebuild so a failed rebuild rolls this back too.
     Returns 'deleted', 'suppressed' (Fusion wouldn't delete it, so it is switched off
@@ -970,6 +1151,13 @@ def delete_version(design, group_name, param_names=()):
             except Exception as e:
                 raise ReplaceError(f'could not remove the previous version {group_name!r}: {e}')
             found = 'suppressed'
+    for token in occurrences:
+        occ = _find_entity(design, token)
+        try:
+            if occ is not None:
+                occ.deleteMe()
+        except Exception:
+            pass
     for name in param_names:
         try:
             p = design.userParameters.itemByName(name)
@@ -980,10 +1168,12 @@ def delete_version(design, group_name, param_names=()):
     return found
 
 
-def execute(design, d, group_name='VibeShaper', comp=None):
+def execute(design, d, group_name='VibeShaper', comp=None, progress=None):
     """Build parameters + timeline in `design`, grouped as one timeline group.
 
     comp: component to build in (default: the root component).
+    progress: optional progress(done, total, label), called before each step and once at the end
+    (done == total). It may raise to stop the build.
 
     Returns {'group_name', 'param_map' (DSL name -> Fusion name), 'feature_count'}.
     """
@@ -1032,6 +1222,9 @@ def execute(design, d, group_name='VibeShaper', comp=None):
 
     tl = design.timeline
     start = tl.markerPosition
+    total = len(d.get('timeline') or []) + sum(len(c['timeline']) for c in d.get('components') or [])
+    report = progress or (lambda done, total, label: None)
+    report(0, total, 'Creating parameters')
 
     for name, expr in d.get('parameters', {}).items():
         try:
@@ -1070,8 +1263,6 @@ def execute(design, d, group_name='VibeShaper', comp=None):
         except Exception as e:
             raise ValueError(f'parameters.{name}: {e}') from e
 
-    base = {'xy': root.xYConstructionPlane, 'xz': root.xZConstructionPlane, 'yz': root.yZConstructionPlane}
-    axes_map = {'x': root.xConstructionAxis, 'y': root.yConstructionAxis, 'z': root.zConstructionAxis}
     ops = {
         'new_body': adsk.fusion.FeatureOperations.NewBodyFeatureOperation,
         'join': adsk.fusion.FeatureOperations.JoinFeatureOperation,
@@ -1081,11 +1272,37 @@ def execute(design, d, group_name='VibeShaper', comp=None):
     world = {'xy': lambda a, b: (a, b, 0), 'xz': lambda a, b: (a, 0, b), 'yz': lambda a, b: (0, a, b)}
 
 
-    sketches = {}
-    features = {}
-    last_feature = None
+    # What to build where: the top-level timeline in the target component, then each component's
+    # timeline in its own new component (placed once per instance).
+    units = [(root, 'timeline', d.get('timeline') or [])]
+    occs = []
+    if 'components' in d:
+        report(0, total, f'Placing {len(d["components"])} components')
 
-    for i, s in enumerate(d['timeline']):
+        def placement(inst):
+            return _placement_matrix(inst, cm, lambda a: um.evaluateExpression(angle_ex(a), 'deg'))
+        try:
+            made, occs = _add_occurrences(root, d['components'], d.get('instances', []), placement)
+        except RuntimeError as e:
+            if 'only contain one component' in str(e):
+                raise ComponentsNotAllowed(str(e)) from e
+            raise
+        units += [(comp_k, f'components[{k}].timeline', c['timeline'])
+                  for k, (c, comp_k) in enumerate(made)]
+    steps = [(r, label, i, s) for r, label, tl_u in units for i, s in enumerate(tl_u)]
+
+    shown = {f'components[{k}].timeline': c.get('name') or c['id'] for k, c in enumerate(d.get('components') or [])}
+    unit = None
+    for done, (root, label, i, s) in enumerate(steps):
+        what = ' '.join(str(x) for x in (s.get('op'), s.get('id') or s.get('sketch') or s.get('feature') or '') if x)
+        report(done, total, f'{shown[label]}: {what}' if label in shown else what)
+        if (root, label) != unit:  # a new timeline: its own planes, sketch ids and feature ids
+            unit = (root, label)
+            base = {'xy': root.xYConstructionPlane, 'xz': root.xZConstructionPlane, 'yz': root.yZConstructionPlane}
+            axes_map = {'x': root.xConstructionAxis, 'y': root.yConstructionAxis, 'z': root.zConstructionAxis}
+            sketches = {}
+            features = {}
+            last_feature = None
         try:
             op = s['op']
             if op == 'sketch':
@@ -1600,8 +1817,9 @@ def execute(design, d, group_name='VibeShaper', comp=None):
                 last_feature = feat
 
         except Exception as e:
-            raise ValueError(f'timeline[{i}] ({s["op"]}): {e}') from e
+            raise ValueError(f'{label}[{i}] ({s["op"]}): {e}') from e
 
+    report(total, total, 'Done')
     end = tl.markerPosition - 1
     made_group = None
     if end >= start:
@@ -1610,7 +1828,14 @@ def execute(design, d, group_name='VibeShaper', comp=None):
             made_group = group_name
         except Exception:
             pass  # a single item can't always be grouped
-    return {'group_name': made_group, 'param_map': param_map, 'feature_count': max(0, end - start + 1)}
+    tokens = []
+    for o in occs:
+        try:
+            tokens.append(o.entityToken)
+        except Exception:
+            pass
+    return {'group_name': made_group, 'param_map': param_map, 'feature_count': max(0, end - start + 1),
+            'occurrences': tokens}
 
 
 _EPS = 1e-7  # cm

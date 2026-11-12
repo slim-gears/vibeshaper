@@ -79,7 +79,8 @@ class Chat:
     def group_name(self, n):
         return f'VibeShaper · {self.title} · v{n} [{self.id}]'
 
-    def add_version(self, d, source, group_name=None, param_map=None, feature_count=0, placement=None):
+    def add_version(self, d, source, group_name=None, param_map=None, feature_count=0, placement=None,
+                    occurrences=None):
         n = (self.versions[-1]['n'] + 1) if self.versions else 1
         v = {
             'n': n,
@@ -89,6 +90,7 @@ class Chat:
             'param_map': dict(param_map or {}),
             'feature_count': feature_count,
             'placement': placement,  # {'mode', 'label'}: where it was built
+            'occurrences': list(occurrences or []),  # entity tokens of the components it placed
             'created': time.time(),
         }
         self.versions.append(v)

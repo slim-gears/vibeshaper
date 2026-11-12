@@ -582,6 +582,21 @@ class _BuildCreated(adsk.core.CommandCreatedEventHandler):
         _keep(_BuildFailed(), cmd.executeFailed)
 
 
+def _build_progress(c, t):
+    """progress(done, total, label) for dsl.execute: the panel shows a bar with the current step.
+    The build runs on Fusion's main thread, and the panel only receives messages while Fusion's
+    event loop runs, so each step lets it run a few times."""
+    def progress(done, total, label):
+        _emit({'type': 'stream', 'chat_id': c.id, 'turn_id': t['id'],
+               'progress': {'done': done, 'total': total, 'label': str(label)}})
+        try:
+            for _ in range(3):
+                adsk.doEvents()
+        except Exception:
+            pass
+    return progress
+
+
 class _BuildExecute(adsk.core.CommandEventHandler):
     def notify(self, args):
         importlib.reload(dsl)  # live hot-load dsl.py edits without restarting add-in
@@ -592,12 +607,15 @@ class _BuildExecute(adsk.core.CommandEventHandler):
         _job['build_failed_handled'] = False
         stage = 'replace'
         occ = None
+        progress = _build_progress(c, t)
         try:
             design = _design()
             prev = _live_version(c, design)
             replaced = None
             if _job.get('replace') and prev:
-                removed = dsl.delete_version(design, prev['group_name'], list(prev.get('param_map', {}).values()))
+                progress(0, 1, f'Removing v{prev["n"]}')
+                removed = dsl.delete_version(design, prev['group_name'], list(prev.get('param_map', {}).values()),
+                                             prev.get('occurrences', []))
                 if removed:
                     replaced = prev['n']
                 if removed == 'suppressed':
@@ -615,14 +633,17 @@ class _BuildExecute(adsk.core.CommandEventHandler):
                     _log('VibeShaper: this document holds one component; building as new bodies')
             stage = 'build'
             n = (c.versions[-1]['n'] + 1) if c.versions else 1
-            info = dsl.execute(design, d, group_name=c.group_name(n), comp=comp)
+            info = dsl.execute(design, d, group_name=c.group_name(n), comp=comp, progress=progress)
         except Exception:
             _job['build_failed_handled'] = True
             err = traceback.format_exc()
             args.executeFailed = True  # Fusion rolls back the whole command, including the delete
             args.executeFailedMessage = err
             # Not the design's fault: asking the model to "fix" these would only waste attempts.
-            if stage == 'replace':
+            if isinstance(sys.exc_info()[1], dsl.ComponentsNotAllowed):
+                _handle_build_failure(err, heal=False, title='This document holds one component (a Part Design), '
+                                                             'so a design with components can’t be built here')
+            elif stage == 'replace':
                 _handle_build_failure(err, heal=False, title='Could not remove the previous version')
             elif stage == 'place':
                 _handle_build_failure(err, heal=False, title='Could not place the design')
@@ -634,7 +655,8 @@ class _BuildExecute(adsk.core.CommandEventHandler):
         if occ is not None:
             c.target['occ'] = occ.entityToken
         v = c.add_version(d, source, group_name=info['group_name'], param_map=info['param_map'],
-                          feature_count=info['feature_count'], placement=placement)
+                          feature_count=info['feature_count'], placement=placement,
+                          occurrences=info.get('occurrences'))
         t.update(status='done', version=v['n'], replaced=replaced)
         if t.get('kind') == 'model':
             c.commit_model_success(t, d)
@@ -889,9 +911,12 @@ def _act_set_param(data):
         p.expression = expr
     except Exception as e:
         return reply(False, f'Fusion rejected it: {e}')
-    c.set_param_in_current(name, expr)
+    moves_parts = name in dsl.placement_parameters(v['dsl'])
+    d = c.set_param_in_current(name, expr)
     _save_store()
     reply(True, c=c)
+    if moves_parts:  # Fusion doesn't move a placed copy when a parameter changes; rebuild to move it
+        _start_json_turn(c, c.add_assistant_turn('json'), json.loads(json.dumps(d)))
 
 
 def _act_validate_json(data):

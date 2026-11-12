@@ -6,7 +6,7 @@ This document provides the definitive specification for the VibeShaper Parametri
 
 ## 1. Top-Level Structure
 
-Every model definition must be a single valid JSON object with exactly two top-level keys:
+Every model definition is a single JSON object with two required top-level keys (a design of several parts adds `components` and `instances`, see section 5.15):
 
 ```json
 {
@@ -459,6 +459,37 @@ Ready-made parts, such as a spur gear, are plugins in the `shapes/` folder. Each
   * `bolt_hole`: clearance holes for metric bolts (M2 to M12), with an optional counterbore, countersink or hex nut trap, sized from ISO tables.
   * `vent_grid`: round, hexagonal (honeycomb) or slot vent holes filling a rectangle; the hole count follows the area.
   * `tslot_profile`: an aluminum T-slot extrusion (2020, 2040, 3030, 4040...) with the real section: rounded corner blocks with lips, a core and bore in each cell, diagonal spars, T-shaped slots and hollows between cells.
+
+### 5.15. Assemblies: `components` and `instances`
+A design made of separate parts lists them under `components`. Each becomes a Fusion component with its own timeline; identical parts are one component placed several times by `instances`, so the parts list counts them and editing the component changes every copy.
+
+```json
+{
+  "parameters": {"leg_len": "400 mm", "top_w": "600 mm", "top_d": "400 mm", "top_t": "18 mm", "leg_inset": "40 mm"},
+  "timeline": [],
+  "components": [
+    {"id": "leg", "name": "Leg", "timeline": [
+      {"op": "sketch", "id": "leg_sk", "plane": "xy", "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "40 mm", "height": "40 mm"}]},
+      {"op": "extrude", "sketch": "leg_sk", "distance": "leg_len", "mode": "new_body"}]},
+    {"id": "top", "name": "Table top", "timeline": [
+      {"op": "sketch", "id": "top_sk", "plane": "xy", "offset": "leg_len", "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "top_w", "height": "top_d"}]},
+      {"op": "extrude", "sketch": "top_sk", "distance": "top_t", "mode": "new_body"}]}
+  ],
+  "instances": [
+    {"component": "leg", "position": ["top_w / 2 - leg_inset", "top_d / 2 - leg_inset", 0]},
+    {"component": "leg", "position": ["leg_inset - top_w / 2", "top_d / 2 - leg_inset", 0]},
+    {"component": "leg", "position": ["leg_inset - top_w / 2", "leg_inset - top_d / 2", 0]},
+    {"component": "leg", "position": ["top_w / 2 - leg_inset", "leg_inset - top_d / 2", 0]}
+  ]
+}
+```
+* **`parameters`** are shared by every component.
+* **`components`**: each has an **`id`** (snake_case), an optional **`name`** shown in Fusion, and a non-empty **`timeline`**. Sketch and feature ids belong to their component, so two components may both have a `base_sk`. The rules of section 6 apply to each timeline.
+* **`instances`** *(optional)*: each names a **`component`**, with an optional **`id`**, a **`position`** `[x, y, z]` (default the origin) and **`rotate`**, a list of `{"axis": "x"|"y"|"z", "angle": angle}`. The component is turned about the world axes through its own origin, in the order given, then moved to `position`. A component with no instances is placed once, where its timeline modeled it.
+* The top-level **`timeline`** may be empty; steps in it are built in the design's own component.
+* Copies can't be mirror images of their component: turn the part instead, or make a separate component. Parts that differ in any size are separate components.
+* Fusion doesn't move a placed copy when a parameter changes. When a parameter an instance's `position` or `rotate` depends on is changed from VibeShaper's parameter list, VibeShaper rebuilds the design so the copies move; a change made in Fusion's own Change Parameters dialog doesn't move them.
+* Part Design documents hold a single component, so a design with `components` can't be built there.
 
 ---
 

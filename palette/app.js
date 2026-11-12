@@ -188,6 +188,7 @@
     if (ev.chars !== undefined) t.chars = ev.chars;
     if (ev.attempt_error) (t.attempts = t.attempts || []).push({ error: ev.attempt_error });
     if (ev.tool) (t.tools = t.tools || []).push(ev.tool);
+    if (ev.progress) t.progress = ev.progress;
     if (statusChanged || ev.attempt_error || ev.tool) {
       patchTurn(t);
     } else {
@@ -205,6 +206,16 @@
       }
       const w = node.querySelector('.writing-count');
       if (w && ev.chars !== undefined) w.textContent = fmtChars(ev.chars) + ' chars';
+      if (ev.progress) {
+        const old = node.querySelector('.build-progress');
+        const count = old && old.querySelector('.count');
+        if (!old || !count) return patchTurn(t);
+        const p = t.progress;
+        old.querySelector('.fill').style.width = (p.total ? Math.min(100, Math.round((100 * p.done) / p.total)) : 0) + '%';
+        old.querySelector('.bar').setAttribute('aria-valuenow', String(p.done));
+        old.querySelector('.label').textContent = p.label || '';
+        count.textContent = `${p.done} / ${p.total}`;
+      }
       if (stick) scrollToBottom();
     }
   }
@@ -324,6 +335,17 @@
     return wrap;
   }
 
+  // How far a build has got: Fusion builds on its main thread, so this arrives in bursts
+  function renderProgress(p) {
+    const pct = p.total ? Math.min(100, Math.round((100 * p.done) / p.total)) : 0;
+    return h('div', { class: 'build-progress' },
+      h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(p.total), 'aria-valuenow': String(p.done) },
+        h('div', { class: 'fill', style: `width:${pct}%` })),
+      h('div', { class: 'build-step' },
+        h('span', { class: 'label', text: p.label || '' }),
+        p.total ? h('span', { class: 'count', text: `${p.done} / ${p.total}` }) : null));
+  }
+
   function renderThinking(t, live) {
     if (!t.thought) return null;
     const d = h('details', { class: 'thinking' },
@@ -354,6 +376,7 @@
     const body = h('div', { class: 'ai-body' });
 
     if (live) body.append(h('div', { class: 'status-line' }, renderSteps(t)));
+    if (t.status === 'building' && t.progress) body.append(renderProgress(t.progress));
     const looked = renderTools(t, live);
     if (looked) body.append(looked);
     const th = renderThinking(t, live);
@@ -1239,13 +1262,24 @@
             turn.status = 'writing';
             emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, status: 'writing', chars: 0 });
             let chars = 0;
+            const demoBuild = (then) => {  // the build reports each step, as the add-in does
+              const names = ['Creating parameters', 'sketch flange_sk', 'extrude flange_body', 'sketch path_sk',
+                'sweep pipe', 'fillet', 'circular_pattern bolt_cut', 'thread port_cut', 'Done'];
+              let k = 0;
+              const step = () => {
+                if (!busy) return;
+                emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, progress: { done: k, total: names.length - 1, label: names[k] } });
+                if (k++ < names.length - 1) later(260, step); else later(200, then);
+              };
+              step();
+            };
             const write = () => {
               if (!busy) return;
               chars += 180;
               if (chars < 1400) { emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, chars }); later(90, write); return; }
               turn.status = 'building';
               emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, status: 'building' });
-              later(700, () => {
+              demoBuild(() => {
                 if (/fail/i.test(text)) {
                   turn.status = 'error'; busy = false;
                   turn.attempts = [{ error: "timeline[2] (sweep): profile is not perpendicular to the path" }, { error: 'timeline[2] (sweep): profile is not perpendicular to the path' }];

@@ -4,6 +4,13 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+### Added
+- **Assemblies.** A design can list several parts under `components`, each a Fusion component with its own timeline, sharing the design's parameters. `instances` place identical parts as copies of one component (turned and moved), so the parts list counts them and editing the component changes every copy. Changing a parameter that moves copies from VibeShaper's parameter list rebuilds the design so they move.
+- **Build progress.** While Fusion builds a design, the panel shows a progress bar with the step being built.
+
+### Fixed
+- A length whose name contains "angle" (a rack angle's `angle_t`: "2 mm") is no longer created as an angle, which Fusion rejected.
+
 ## [0.4.0]
 
 ### Added

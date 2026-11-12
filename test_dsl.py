@@ -1322,12 +1322,94 @@ _fails(_mv(entities=[], line=[[0, 0], [0, 1]]), 'non-empty list')
 assert 'mirror' in JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items'][
     'properties']['type']['enum']
 
+# Test 5f3: assemblies. Components have their own timelines (own sketch ids); instances place copies
+import copy as _copy
+_part = lambda size: [
+    {"op": "sketch", "id": "base_sk", "plane": "xy",
+     "entities": [{"type": "center_rectangle", "center": [0, 0], "width": size, "height": size}]},
+    {"op": "extrude", "id": "base", "sketch": "base_sk", "distance": size, "mode": "new_body"}]
+_asm = {"parameters": {"leg": "40 mm", "top": "300 mm", "half": "top / 2 - leg", "turn": "90 deg"},
+        "timeline": [],
+        "components": [{"id": "leg", "name": "Leg", "timeline": _part("leg")},
+                       {"id": "top", "timeline": _part("top")}],   # same sketch id in both: fine
+        "instances": [{"component": "leg", "id": "leg_a", "position": ["half", "half", 0]},
+                      {"component": "leg", "position": ["-half", 0, 0], "rotate": [{"axis": "z", "angle": "turn"}]}]}
+validate(_copy.deepcopy(_asm))
+_bad = lambda **kw: dict(_copy.deepcopy(_asm), **kw)
+_fails(_bad(components=[]), 'components must be a non-empty list')
+_fails(_bad(components=[{"id": "leg", "timeline": _part("leg")}, {"id": "leg", "timeline": _part("leg")}]),
+       'duplicate component id')
+_fails(_bad(components=[{"id": "leg", "timeline": []}]), 'components[0]: timeline must be a non-empty list')
+_fails(_bad(components=[{"id": "leg", "timeline": [{"op": "extrude", "sketch": "nope", "distance": 1}]}]),
+       'components[0].timeline[0]')
+_fails(_bad(instances=[{"component": "shelf"}]), "component 'shelf' is not in components")
+_fails(_bad(instances=[{"component": "leg", "position": [0, 0]}]), 'position must be [x, y, z]')
+_fails(_bad(instances=[{"component": "leg", "rotate": [{"axis": "w", "angle": 90}]}]), 'rotate must be a list')
+_fails(_bad(instances=[{"component": "leg", "id": "a"}, {"component": "leg", "id": "a"}]), 'duplicate instance id')
+_fails({"parameters": {}, "timeline": _part(10), "instances": [{"component": "leg"}]}, 'instances need components')
+_fails({"parameters": {}, "timeline": []}, 'timeline must be a non-empty list')
+_js = JSON_SCHEMA['properties']
+assert _js['components']['items']['properties']['timeline'] is _js['timeline'] and 'rotate' in _js['instances']['items']['properties']
+assert 'ASSEMBLIES' in llm.SYSTEM and '"instances"' in llm.SYSTEM
+
+# Shapes expand inside components too; their parameters are shared, so two shape ids can't clash
+_rail = {"op": "tslot_profile", "id": "rail", "series": "2020", "length": 100}
+_x = dsl_mod.expand_shapes({"parameters": {}, "timeline": [], "components": [{"id": "r", "timeline": [_rail]}]})
+assert 'rail_slot' in _x['parameters'] and all(s['op'] != 'tslot_profile' for s in _x['components'][0]['timeline'])
+validate({"parameters": {}, "timeline": [], "components": [{"id": "r", "timeline": [_rail]}]})
+_fails({"parameters": {}, "timeline": [], "components": [{"id": "a", "timeline": [_rail]}, {"id": "b", "timeline": [_rail]}]},
+       'components[1].timeline[0] (tslot_profile): parameters')
+
+# Renamed parameters (they already exist in the design) are renamed in components and positions too
+_r = dsl_mod.disambiguate_parameters(_copy.deepcopy(_asm), {'leg'})
+assert _r['components'][0]['timeline'][0]['entities'][0]['width'].startswith('part2_leg')
+assert _r['instances'][0]['position'][0] == 'part2_half' and _r['instances'][1]['rotate'][0]['angle'] == 'part2_turn'
+assert _r['instances'][0]['component'] == 'leg' and _r['components'][0]['id'] == 'leg'
+
+# The parameters that move copies, directly or through other parameters
+assert dsl_mod.placement_parameters(_asm) == {'half', 'top', 'leg', 'turn'}
+assert dsl_mod.placement_parameters(dict(_asm, instances=[{"component": "top"}])) == set()
+
+# Placement: turns about the world axes in order, then the position
+_turns, _pos = dsl_mod._placement(_asm['instances'][1], lambda v: f'L({v})', lambda a: f'A({a})')
+assert _turns == [('z', 'A(turn)')] and _pos == ('L(-half)', 'L(0)', 'L(0)')
+assert dsl_mod._placement({"component": "x"}, str, str) == ([], ('0', '0', '0'))
+
+# Occurrences: the first instance makes the component, the others are copies of it
+class _Occs:
+    def __init__(self):
+        self.made = []
+
+    def addNewComponent(self, m):
+        o = SimpleNamespace(component=SimpleNamespace(name=None), name=None, entityToken=f'occ{len(self.made)}', m=m)
+        self.made.append(('new', o))
+        return o
+
+    def addExistingComponent(self, comp, m):
+        o = SimpleNamespace(component=comp, name=None, entityToken=f'occ{len(self.made)}', m=m)
+        self.made.append(('copy', o))
+        return o
+
+from types import SimpleNamespace
+_parent = SimpleNamespace(occurrences=_Occs())
+_made, _occs = dsl_mod._add_occurrences(_parent, _asm['components'], _asm['instances'],
+                                         lambda inst: inst.get('position'))
+assert [k for k, _ in _parent.occurrences.made] == ['new', 'copy', 'new']
+_legs = [o for _, o in _parent.occurrences.made[:2]]
+assert _legs[0].component is _legs[1].component and _legs[0].component.name == 'Leg' and _legs[0].name == 'leg_a'
+assert _legs[1].m == ['-half', 0, 0] and _parent.occurrences.made[2][1].m is None   # no instances: where modeled
+assert _made[1][1].name == 'top' and [c['id'] for c, _ in _made] == ['leg', 'top'] and len(_occs) == 3
+
 # Angle parameters: by name, or deg/rad in something that isn't a length
 from dsl import _is_angle_param
 assert _is_angle_param('draft_angle', '5', False)
 assert _is_angle_param('tilt', '5 deg', False)
 assert not _is_angle_param('gear_base_r', 'gear_pitch_r * cos(20 deg)', True)
 assert not _is_angle_param('gear_radius', '10 mm', True)
+assert not _is_angle_param('angle_t', '2 mm', True)                    # a rack angle's thickness
+assert not _is_angle_param('angle_back', 'angle_face + angle_t', True)  # works out as a length
+assert _is_angle_param('tilt_angle', 'base_angle * 2', False)           # doesn't: an angle
+assert _is_angle_param('cone_angle', '30 deg', False)
 
 # Test 5g: Shape plugins. The core names none of them; a shape step expands into plain DSL
 import math
@@ -2175,6 +2257,15 @@ for it in g._items:
 assert dsl.delete_version(des, 'VibeShaper · Spring · v1 [s]', []) == 'suppressed'
 assert g.isSuppressed is True
 
+# Component copies a version placed are deleted by their tokens, if deleting its group left them
+des = _Design()
+des.timeline.add_group('VibeShaper · Rack · v1 [r]', 2)
+_left = SimpleNamespace(isValid=True, gone=False)
+_left.deleteMe = lambda: setattr(_left, 'gone', True) or True
+des.findEntityByToken = lambda tok: [_left] if tok == 'occ1' else []
+assert dsl.delete_version(des, 'VibeShaper · Rack · v1 [r]', [], ['occ1', 'occ_gone']) == 'deleted'
+assert _left.gone
+
 # ----- Where a build goes: the chat's own component -----
 class _FComp:
     def __init__(self, design, name):
@@ -2383,8 +2474,11 @@ e2e._save_settings = lambda s: None
 BUILT_INTO = []  # component name (None = root) per execute
 
 
-def _fake_execute(design, d, group_name='VibeShaper', comp=None):
+def _fake_execute(design, d, group_name='VibeShaper', comp=None, progress=None):
     BUILT_INTO.append(comp.name if comp else None)
+    if progress:
+        progress(0, len(d['timeline']), 'Creating parameters')
+        progress(len(d['timeline']), len(d['timeline']), 'Done')
     if d.get('name') == 'bad':
         raise ValueError('timeline[1] (extrude): sketch has no closed profiles')
     for k, v in d['parameters'].items():
@@ -2444,6 +2538,8 @@ assert 'pondering' in t['thought']
 assert len(groups()) == 1 and groups()[0].startswith('VibeShaper · a 40 mm cube · v1')
 assert H.design.userParameters.d['cube_w'].expression == '40 mm'
 assert SP.seen[-1][0]['role'] == 'system' and SP.seen[-1][-1]['content'] == 'a 40 mm cube'
+_prog = [e['progress'] for e in H.panel if e.get('type') == 'stream' and 'progress' in e and e['turn_id'] == t['id']]
+assert _prog and _prog[-1] == {'done': 2, 'total': 2, 'label': 'Done'}  # the build's progress reached the panel
 
 # 2. A follow-up replaces v1 (one group, old parameters deleted first) and the model sees the history
 SP.replies = [_design_dsl(60)]
@@ -2563,7 +2659,7 @@ E2E_GENERAL['auto_fix'] = 2
 _real_delete = e2e.dsl.delete_version
 
 
-def _broken_delete(design, group_name, param_names=()):
+def _broken_delete(design, group_name, param_names=(), occurrences=()):
     raise RuntimeError('2 : InternalValidationError : res')
 
 
@@ -2746,5 +2842,29 @@ assert _gone not in H.design.attributes.itemByName('VibeShaper', 'chats').value
 assert H.chat_view()['id'] == (_shown if _shown != _gone else e2e._store().active().id)
 H.act('delete_chat', id='no-such-chat')  # nothing happens
 e2e.dsl.delete_version = _real_delete_version
+
+# 18. Assemblies: a parameter that moves copies rebuilds the design (Fusion wouldn't move them);
+# any other parameter goes straight to Fusion as before
+H.act('new_chat')
+_asm = {'name': 'table', 'parameters': {'tbl_leg': '40 mm', 'tbl_x': '100 mm'}, 'timeline': [], 'components': [
+    {'id': 'leg', 'timeline': [
+        {'op': 'sketch', 'id': 's', 'plane': 'xy',
+         'entities': [{'type': 'center_rectangle', 'center': [0, 0], 'width': 'tbl_leg', 'height': 'tbl_leg'}]},
+        {'op': 'extrude', 'sketch': 's', 'distance': 'tbl_leg', 'mode': 'new_body'}]}],
+    'instances': [{'component': 'leg', 'position': ['tbl_x', 0, 0]}, {'component': 'leg', 'position': ['-tbl_x', 0, 0]}]}
+H.act('send', text=json.dumps(_asm))
+H.pump(H.idle)
+_c = e2e._store().active()
+assert H.last_ai()['status'] == 'done' and _c.current_version()['n'] == 1, H.last_ai()
+H.act('set_param', name='tbl_leg', expr='45 mm')
+H.pump(H.idle)
+assert H.panel[-1]['ok'] is True and _c.current_version()['n'] == 1     # only the leg's size: no rebuild
+_v1_group = _c.current_version()['group_name']
+H.act('set_param', name='tbl_x', expr='120 mm')
+H.pump(H.idle)
+assert _c.current_version()['n'] == 2 and H.last_ai()['status'] == 'done', H.last_ai()
+assert _c.current_version()['dsl']['parameters'] == {'tbl_leg': '45 mm', 'tbl_x': '120 mm'}
+assert H.design.userParameters.d['tbl_x'].expression == '120 mm'
+assert _v1_group not in [g.name for g in H.design.timeline.groups]  # v1 replaced
 
 print('ok')

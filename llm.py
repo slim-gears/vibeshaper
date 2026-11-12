@@ -21,6 +21,7 @@ Output ONLY the JSON object.
 
 FORMAT
 {"parameters": {name: expression, ...}, "timeline": [step, ...]}
+(a design of several parts adds "components" and "instances"; see ASSEMBLIES)
 
 PARAMETERS
 - snake_case names; values like "60 mm" or expressions over earlier parameters ("width - 2 * wall").
@@ -75,6 +76,20 @@ SKETCH ENTITIES (entities can have optional "id": "name" to be referenced by con
 {"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires
 {"type": "regular_polygon", "center": [a, b], "sides": n, "across_flats": d}   or "diameter" (through the corners) instead of across_flats; e.g. hex nut recesses
 {"type": "mirror", "id": name, "entities": [ids of earlier entities in this sketch], "line": [[a, b], [c, d]]}   copies them across the line through the two points, tied by symmetry. For symmetric outlines, draw one side as an open chain ("closed": false) that starts and ends on the line, then mirror it; mirror the mirror's id to mirror again
+
+ASSEMBLIES (a design made of separate parts: a frame of profiles, a box with a lid, a gearbox)
+{"parameters": {...}, "timeline": [],
+ "components": [{"id": name, "name": "Readable part name", "timeline": [step, ...]}, ...],
+ "instances": [{"component": component_id, "id": name (optional), "position": [x, y, z] (optional, default [0, 0, 0]),
+                "rotate": [{"axis": "x"|"y"|"z", "angle": angle}, ...] (optional)}, ...]}
+- Each component is its own part with its own timeline (its own sketch and feature ids). Parameters are shared by all.
+- Identical parts are ONE component placed by several instances (four equal legs: one component, four instances).
+  Model it once around its own origin (a leg standing up from [0, 0, 0]); each instance turns it about the world axes
+  through that origin, in the order given, then moves it to "position".
+- A component without instances is placed once, exactly where its timeline modeled it.
+- Parts that differ in any size are separate components. An instance can't be a mirror image: turn the part instead,
+  or make a separate component.
+- The top-level "timeline" may stay empty when everything is in components.
 
 RULES & BEST PRACTICES
 - NEVER combine two operations into one step! Each operation (`extrude`, `fillet`, `shell`, `chamfer`, etc.) MUST be its own separate entry in the `timeline` array.
