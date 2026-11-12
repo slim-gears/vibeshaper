@@ -208,6 +208,8 @@ def main(argv):
         with open(argv[2], 'w', encoding='utf-8-sig', newline='') as f:  # Excel reads the BOM mark as UTF-8
             f.write(text)
     else:
+        if hasattr(sys.stdout, 'reconfigure'):  # a Windows console's code page lacks some characters
+            sys.stdout.reconfigure(encoding='utf-8')
         sys.stdout.write(text)
     return 0
 
