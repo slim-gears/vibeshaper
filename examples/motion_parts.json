@@ -1,0 +1,42 @@
+{
+  "name": "motion_parts",
+  "parameters": {
+    "gap": "80 mm",
+    "rail_len": "300 mm",
+    "screw_len": "300 mm"
+  },
+  "timeline": [],
+  "components": [
+    {"id": "motor", "name": "NEMA17 motor", "timeline": [
+      {"op": "nema_motor", "id": "motor", "size": "17", "length": "40 mm", "note": "1.5 A, 0.42 N·m"}]},
+    {"id": "rail", "name": "MGN12 rail", "timeline": [
+      {"op": "linear_rail", "id": "rail", "series": "MGN12", "length": "rail_len"}]},
+    {"id": "carriage", "name": "MGN12H carriage", "timeline": [
+      {"op": "rail_carriage", "id": "carriage", "series": "MGN12", "block": "H"}]},
+    {"id": "screw", "name": "T8 lead screw", "timeline": [
+      {"op": "lead_screw", "id": "screw", "length": "screw_len", "lead": 2}]},
+    {"id": "nut", "name": "T8 nut", "timeline": [
+      {"op": "lead_nut", "id": "nut", "anti_backlash": true}]},
+    {"id": "bearing", "name": "KP08 bearing", "timeline": [
+      {"op": "pillow_block", "id": "bearing"}]},
+    {"id": "coupler", "name": "Coupler 5-8", "timeline": [
+      {"op": "shaft_coupler", "id": "coupler", "bore1": 5, "bore2": 8}]},
+    {"id": "spindle", "name": "Spindle", "timeline": [
+      {"op": "spindle", "id": "spindle", "collet": "ER11", "note": "300 W, 48 V"}]}
+  ],
+  "instances": [
+    {"component": "motor", "position": [0, 0, 0]},
+    {"component": "rail", "position": [0, "gap", 0]},
+    {"component": "carriage", "position": ["rail_len / 3", "gap", 0]},
+    {"component": "carriage", "position": ["2 * rail_len / 3", "gap", 0]},
+    {"component": "screw", "position": [0, "2 * gap", 0], "rotate": [{"axis": "y", "angle": "90 deg"}]},
+    {"component": "nut", "position": ["gap", 0, 0]},
+    {"component": "bearing", "position": ["2 * gap", 0, 0]},
+    {"component": "coupler", "position": ["3 * gap", 0, 0]},
+    {"component": "spindle", "position": ["4 * gap", 0, 0]}
+  ],
+  "bom": [
+    {"category": "Electronics", "item": "MKS DLC32 controller with 3 x TMC2209", "qty": 1},
+    {"category": "Wiring", "item": "4-core 22 AWG shielded cable", "unit": "m", "qty": "rail_len + 400 mm", "round": 0.5}
+  ]
+}
