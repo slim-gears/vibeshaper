@@ -4,6 +4,8 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.5.0]
+
 ### Added
 - **Assemblies.** A design can list several parts under `components`, each a Fusion component with its own timeline, sharing the design's parameters. `instances` place identical parts as copies of one component (turned and moved), so the parts list counts them and editing the component changes every copy. Changing a parameter that moves copies from VibeShaper's parameter list rebuilds the design so they move.
 - **Build progress.** While Fusion builds a design, the panel shows a progress bar with the step being built.
@@ -53,7 +55,8 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/slim-gears/vibeshaper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/slim-gears/vibeshaper/releases/tag/v0.2.0
