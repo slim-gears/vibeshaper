@@ -9,6 +9,9 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 - **Screws for bolt holes.** A `bolt_hole` with `"screw": {"length": ...}` adds its screws (rounded up to a stock length), nuts, T-nuts or heat-set inserts, and washers to the bill of materials.
 - **Bought parts as shapes:** `nema_motor` (NEMA 14/17/23), `linear_rail` and `rail_carriage` (MGN7 to MGN15), `lead_screw` and `lead_nut` (T8), `pillow_block` (KP08), `shaft_coupler` and `spindle` (ER collet). Each has its mounting holes, to design the parts around it, and lists itself in the bill of materials. `tslot_profile` lists its cut length too.
 
+### Fixed
+- **A cut in one part no longer cuts the parts placed against it.** Joins, cuts and intersects (extrude, revolve, sweep, coil) change only the bodies of their own component, so a carriage's channel no longer cuts into its rail.
+
 ## [0.5.0]
 
 ### Added

@@ -1056,6 +1056,17 @@ def supports_components(design):
         return True
 
 
+def _own_bodies(inp, comp, mode):
+    """Let a join, cut or intersect change only the bodies of the component whose timeline it is in.
+    Fusion otherwise applies it to every body it touches, including other components' parts placed
+    against this one (a carriage's channel cut would cut its rail)."""
+    if mode in ('join', 'cut', 'intersect'):
+        bodies = [comp.bRepBodies.item(k) for k in range(comp.bRepBodies.count)]
+        if bodies:
+            inp.participantBodies = bodies
+    return inp
+
+
 def ensure_component(design, occ_token, name):
     """The chat's own component occurrence: the saved one if it still exists, else a new one.
 
@@ -1418,7 +1429,8 @@ def execute(design, d, group_name='VibeShaper', comp=None, progress=None):
                 for k in range(sk.profiles.count):
                     profs.add(sk.profiles.item(k))
                 feats = root.features.extrudeFeatures
-                inp = feats.createInput(profs, ops[s.get('mode', 'new_body')])
+                inp = _own_bodies(feats.createInput(profs, ops[s.get('mode', 'new_body')]), root,
+                                  s.get('mode', 'new_body'))
                 inp.setDistanceExtent(False, adsk.core.ValueInput.createByString(ex(s['distance'])))
                 feat = feats.add(inp)
                 feat_id = s.get('id', s['sketch'])
@@ -1434,7 +1446,8 @@ def execute(design, d, group_name='VibeShaper', comp=None, progress=None):
                     profs.add(sk.profiles.item(k))
                 revolves = root.features.revolveFeatures
                 axis = axes_map[s.get('axis', 'z').lower()]
-                inp = revolves.createInput(profs, axis, ops[s.get('mode', 'new_body')])
+                inp = _own_bodies(revolves.createInput(profs, axis, ops[s.get('mode', 'new_body')]), root,
+                                  s.get('mode', 'new_body'))
                 angle_str = str(s.get('angle', '360 deg'))
                 inp.setAngleExtent(False, adsk.core.ValueInput.createByString(angle_ex(angle_str)))
                 feat = revolves.add(inp)
@@ -1720,7 +1733,7 @@ def execute(design, d, group_name='VibeShaper', comp=None, progress=None):
                 sweeps = root.features.sweepFeatures
                 mode = s.get('mode', 'new_body').lower()
                 op_mode = ops.get(mode, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-                inp = sweeps.createInput(prof_arg, path, op_mode)
+                inp = _own_bodies(sweeps.createInput(prof_arg, path, op_mode), root, mode)
                 feat = sweeps.add(inp)
                 feat_id = s.get('id', f'_sweep_{i}')
                 features[feat_id] = feat
@@ -1860,7 +1873,7 @@ def execute(design, d, group_name='VibeShaper', comp=None, progress=None):
                     pass
 
                 prof = sk_prof.profiles.item(0)
-                inp = sweeps.createInput(prof, path, op_mode)
+                inp = _own_bodies(sweeps.createInput(prof, path, op_mode), root, mode)
                 feat = sweeps.add(inp)
                 feat_id = s.get('id', f'_coil_{i}')
                 features[feat_id] = feat

@@ -1593,6 +1593,22 @@ _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, length=4, depth=
 _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, rows=0), 'rows')
 
 
+# A join, cut or intersect changes only its own component's bodies, never a part placed against it
+_own = lambda bodies, mode: dsl_mod._own_bodies(SimpleNamespace(), SimpleNamespace(bRepBodies=_FakeBodies(bodies)),
+                                                mode)
+class _FakeBodies:
+    def __init__(self, items):
+        self.items, self.count = items, len(items)
+    def item(self, k):
+        return self.items[k]
+assert _own(['rail_bar'], 'cut').participantBodies == ['rail_bar']
+assert _own(['a', 'b'], 'join').participantBodies == ['a', 'b'] and _own(['a'], 'intersect').participantBodies == ['a']
+assert not hasattr(_own(['a'], 'new_body'), 'participantBodies')
+assert not hasattr(_own([], 'cut'), 'participantBodies')            # nothing of its own yet: leave Fusion's default
+_dsl_src = (_HERE / 'dsl.py').read_text(encoding='utf-8')
+for _call in ('feats.createInput', 'revolves.createInput', 'sweeps.createInput(prof_arg', 'sweeps.createInput(prof,'):
+    assert f'_own_bodies({_call}' in _dsl_src, _call                  # every feature that can cut is limited
+
 # Bill of materials: expressions are evaluated without Fusion
 import bom as bom_mod
 _bev = bom_mod.Evaluator({'a': '10 mm', 'b': 'a * 2 + 1 cm', 'n': '4', 'ang': '90 deg', 'loop': 'loop + 1'})
