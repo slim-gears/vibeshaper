@@ -9,14 +9,14 @@ import sys
 from typing import Any, Callable, Dict, List, Optional
 
 try:
-    from . import dsl, providers, userdata
+    from . import dsl, features, providers, shapes, userdata
 except ImportError:  # run as a plain script
-    import dsl, providers, userdata
+    import dsl, features, providers, shapes, userdata
 
 LOG_FILE = userdata.path('vibeshaper.log')
 LAST_RESPONSE_FILE = userdata.path('last_response.txt')
 
-SYSTEM = """You are a CAD engineer. Convert the user's request into a parametric design written in this JSON DSL.
+_SYSTEM_HEAD = """You are a CAD engineer. Convert the user's request into a parametric design written in this JSON DSL.
 Output ONLY the JSON object.
 
 FORMAT
@@ -37,46 +37,9 @@ COORDINATES (world, Z is up)
 - "offset" moves the sketch plane along its normal: plane "xy" with offset "h" sketches at Z = h.
 
 OPERATIONS (Each timeline step must contain ONLY its required keys!):
-1. Sketch:
-   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz", "offset": length (optional), "entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal", "entities": [id1, id2]}, ...] (optional)}
-2. Extrude:
-   {"op": "extrude", "id": optional_name, "sketch": sketch_id, "distance": length, "mode": "new_body"|"join"|"cut"|"intersect"}
-3. Revolve:
-   {"op": "revolve", "id": optional_name, "sketch": sketch_id, "axis": "x"|"y"|"z", "angle": "360 deg" (optional), "mode": "new_body"|"join"|"cut"}
-4. Fillet (ONLY uses radius and edges! NEVER put thickness or remove_faces here!):
-   {"op": "fillet", "radius": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
-5. Chamfer (ONLY uses distance and edges!):
-   {"op": "chamfer", "distance": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
-   edge_object picks edges made by an earlier step: {"feature": step_id, "faces": "all"|"side"|"start"|"end" (optional), "exclude": step_id or [ids] (optional, drops edges touching those steps' faces), "on": sketch_id (optional, only edges in that sketch's plane), "type": "circle"|"line" (optional)}.
-   Prefer it over the broad words when only some edges should change, e.g. {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}.
-6. Shell (ONLY uses thickness and remove_faces! NEVER put radius or edges here!):
-   {"op": "shell", "thickness": length, "remove_faces": "top"|"bottom"|"none"}
-7. Circular Pattern:
-   {"op": "circular_pattern", "feature": feature_id (optional), "axis": "z", "center": [a, b] (optional, default [0, 0]), "quantity": count, "angle": "360 deg"}
-   The axis passes through "center" ([x, y] for "z", [y, z] for "x", [x, z] for "y"). Set it whenever the patterned part is not centered on the origin.
-8. Linear Pattern:
-   {"op": "linear_pattern", "feature": feature_id (optional), "direction": "x"|"y"|"z", "distance": spacing, "quantity": count,
-    "direction2": another axis, "distance2": spacing, "quantity2": count (optional, all three for a grid)}
-9. Thread:
-   {"op": "thread", "feature": feature_id (optional), "target": "internal"|"external"|"all" (optional), "modeled": true|false (optional, default true), "designation": "M6x1" (optional)}
-10. Mirror:
-   {"op": "mirror", "feature": feature_id (optional), "plane": "xy"|"xz"|"yz"|"top"|"bottom", "combine": true|false (optional, default true)}
-11. Combine (Boolean):
-   {"op": "combine", "target": body_or_feature_id (optional), "tools": [tool_id, ...], "mode": "cut"|"join"|"intersect", "keep_tools": false}
-12. Sweep:
-   {"op": "sweep", "sketch": profile_sketch_id, "path": path_sketch_id, "mode": "new_body"|"join"|"cut"}
-13. Coil (Spring / Helix):
-   {"op": "coil", "diameter": coil_dia, "pitch": pitch, "revolutions": count, "section_size": wire_dia, "axis": "z"|"x"|"y" (optional, default "z"), "mode": "new_body"|"join"|"cut" (optional, default "new_body")}
+"""
 
-SKETCH ENTITIES (entities can have optional "id": "name" to be referenced by constraints)
-{"type": "center_rectangle", "center": [a, b], "width": along a, "height": along b}
-{"type": "circle", "center": [a, b], "diameter": d}
-{"type": "polygon", "points": [[a, b], ...], "closed": true}   at least 3 points
-{"type": "line", "start": [a, b], "end": [c, d]}
-{"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires
-{"type": "regular_polygon", "center": [a, b], "sides": n, "across_flats": d}   or "diameter" (through the corners) instead of across_flats; e.g. hex nut recesses
-{"type": "mirror", "id": name, "entities": [ids of earlier entities in this sketch], "line": [[a, b], [c, d]]}   copies them across the line through the two points, tied by symmetry. For symmetric outlines, draw one side as an open chain ("closed": false) that starts and ends on the line, then mirror it; mirror the mirror's id to mirror again
-
+_SYSTEM_ASSEMBLIES = """
 ASSEMBLIES (a design made of separate parts: a frame of profiles, a box with a lid, a gearbox)
 {"parameters": {...}, "timeline": [],
  "components": [{"id": name, "name": "Readable part name", "timeline": [step, ...]}, ...],
@@ -101,23 +64,15 @@ BILL OF MATERIALS (optional: for designs meant to be built, ordered and assemble
 - A component that isn't a bought part is listed as a part to make; give it "material" (e.g. "PETG").
 
 RULES & BEST PRACTICES
-- NEVER combine two operations into one step! Each operation (`extrude`, `fillet`, `shell`, `chamfer`, etc.) MUST be its own separate entry in the `timeline` array.
-- For hollow boxes or open containers, prefer `shell` with `remove_faces: "top"` over manual pocket cuts!
-- When making an open box with rounded corners: FIRST `extrude`, NEXT `fillet` the vertical corners, THEN `shell` the top face (or shell first, then fillet). They are two distinct steps!
-- For rounded corners or chamfered rims, use `fillet` or `chamfer` with edge selectors (`"vertical"`, `"top"`, `"circular"`).
-- For radial arrays (e.g. 6 bolt holes on a flange), draw ONE hole and use `circular_pattern`!
-- For symmetric designs, model ONE half and use `mirror` across "xz" or "yz" with `combine: true` to complete the full symmetric body!
-- To carve or combine separate bodies, use `combine` with `mode: "cut"` / `"join"` and list tool body IDs in `tools`.
-- For bent pipes, tubing, wire routing, or rails, draw a cross-section `sketch` and a spine/route `path` sketch, then use `sweep`.
-- For hollow pipes or conduit: to ensure fluid can pass through, FIRST sweep the outer pipe body (`mode: "new_body"`), THEN sweep an inner bore circle with a smaller diameter along the path (`mode: "cut"`) so the pipe is hollow and has a through-bore from end to end.
-- When modeling a gusset rib against a round pipe or cylinder: rib sketch points MUST extend into the body centerline (e.g. at [0, 0] or into the wall), NOT stop on the outer radius. Because round cylinders curve away from the offset sketch plane, stopping at the outer radius causes floating gaps!
-- To thread a hole, bore, or bolt, add a `thread` step specifying the cut feature: `{"op": "thread", "feature": "bore_cut", "target": "internal", "designation": "M20x2.5"}`. Physical 3D threads are modeled by default (`modeled: true`).
-- For springs, coils, or screw helices, use `coil` with `diameter` (major coil diameter), `section_size` (wire diameter), and `pitch` / `revolutions` (or `height`).
-- The first 3D operation must be "new_body". "cut"/"join" must overlap existing material.
+- NEVER combine two operations into one step! Each operation MUST be its own separate entry in the `timeline` array."""
+
+_SYSTEM_RULES_TAIL = """- The first 3D operation must be "new_body". "cut"/"join" must overlap existing material.
 - An extrude or revolve uses EVERY closed region of its sketch. Never draw a shape inside another shape in the same sketch.
 - A sketch must be defined before the operation that uses it.
 - Prefer centering features at [0, 0].
+"""
 
+_SYSTEM_EXAMPLES = """
 EXAMPLE 1 (hollow enclosure with rounded corners)
 """ + json.dumps({
     'parameters': {'box_width': '80 mm', 'box_length': '120 mm', 'box_height': '40 mm',
@@ -197,8 +152,30 @@ SHAPES_NOTE = """
 
 READY-MADE SHAPES (one step each; use them instead of drawing these by hand)
 """
-if dsl.shapes_prompt():
-    SYSTEM += SHAPES_NOTE + dsl.shapes_prompt()
+
+
+def _build_system():
+    parts = [
+        _SYSTEM_HEAD + dsl.features_prompt(),
+        _SYSTEM_ASSEMBLIES,
+        dsl.feature_rules_prompt(),
+        _SYSTEM_RULES_TAIL + _SYSTEM_EXAMPLES,
+    ]
+    text = '\n'.join(p for p in parts if p)
+    sp = dsl.shapes_prompt()
+    if sp:
+        text += SHAPES_NOTE + sp
+    return text
+
+
+def _refresh_system():
+    global SYSTEM
+    SYSTEM = _build_system()
+
+
+SYSTEM = _build_system()
+features.on_change(_refresh_system)
+shapes.on_change(_refresh_system)
 
 CONTEXT_NOTE = """
 

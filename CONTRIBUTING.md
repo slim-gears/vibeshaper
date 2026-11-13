@@ -76,23 +76,26 @@ Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake bac
 |---|---|
 | `VibeShaper.py` | The add-in: Fusion commands, the panel bridge, settings, running builds and tools |
 | `llm.py` | Talking to the model: system prompt, retries, the tool loop, logging |
-| `dsl.py` | Validating the JSON design and building it in Fusion ([DSL_SPEC.md](DSL_SPEC.md)) |
+| `dsl.py` | Validating the JSON design and executing its timeline in Fusion ([DSL_SPEC.md](DSL_SPEC.md)) |
 | `chat.py` | Chats, versions and saving them in the document |
 | `bom.py` | The bill of materials of a design, as CSV; also runs on the command line |
 | `userdata.py` | Where settings and logs are kept |
 | `providers/` | Model provider plugins (Ollama, Gemini) |
 | `tools/` | Tool plugins the model can call (design inspection) |
-| `shapes/` | Shape plugins: ready-made parts as one timeline step (spur gear, motors, rails) |
+| `features/` | Feature plugins: DSL timeline operations (`sketch`, `extrude`, `fillet`, …) |
+| `features/entities/` | Sketch entity plugins (`circle`, `center_rectangle`, `polygon`, …) |
+| `shapes/` | Shape plugins: ready-made parts as one timeline step — declarative `.json` macros (`*.json`) and Python subclasses (`*.py`) |
 | `palette/` | The chat panel |
 
 ### The one rule: the core knows no plugin
 
-Everything specific to a provider, a tool or a shape lives in its plugin. The core (`VibeShaper.py`, `llm.py`, `chat.py`, `dsl.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool, a toolkit or a shape. Tests enforce this.
+Everything specific to a provider, a tool, a feature, a sketch entity or a shape lives in its plugin. The core (`VibeShaper.py`, `llm.py`, `chat.py`, `dsl.py`, `bom.py`, `userdata.py`, the registries and the panel) must never name a provider, a provider setting, a tool, a toolkit, a feature op (except in worked prompt examples), a sketch entity type or a shape. Tests enforce this.
 
 If a feature differs per provider or per model (thinking, images, tools), add it to the plugin interface (`providers/base.py`, `tools/base.py`) and let plugins report it, rather than checking for a particular provider in the core.
 
 - **New provider**: see [Adding Custom Providers](README.md#-adding-custom-providers).
 - **New tools**: see [Adding Tools](README.md#adding-tools).
+- **New features / sketch entities**: see [Adding Features](README.md#adding-features).
 - **New shapes**: see [Adding Shapes](README.md#adding-shapes).
 
 ## Pull requests

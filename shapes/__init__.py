@@ -1,25 +1,39 @@
-"""Shape registry. Every module in this package that defines a BaseShape subclass is a plugin;
+"""Shape registry. Every .py BaseShape subclass and .json shape macro in this package is a plugin;
 none is special, and the registry knows nothing about any of them."""
 import importlib
 import inspect
 import pathlib
 import pkgutil
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
+from ._json import JsonShape, load_json_shape
 from .base import BaseShape
 
 _REGISTRY: Dict[str, BaseShape] = {}
 _discovered = False
+_listeners: List[Callable[[], None]] = []
+
+
+def on_change(fn: Callable[[], None]) -> None:
+    if fn not in _listeners:
+        _listeners.append(fn)
+
+
+def notify_change() -> None:
+    for fn in list(_listeners):
+        fn()
 
 
 def register_shape(shape: BaseShape) -> None:
     if not shape.op:
         raise ValueError(f"Shape {shape} has no 'op' set.")
     _REGISTRY[shape.op] = shape
+    notify_change()
 
 
 def unregister_shape(op: str) -> None:
     _REGISTRY.pop(op, None)
+    notify_change()
 
 
 def get_shape(op: str) -> Optional[BaseShape]:
@@ -44,8 +58,9 @@ def _auto_discover():
         return
     _discovered = True
     pkg_dir = pathlib.Path(__file__).parent
+    added = False
     for _, module_name, is_pkg in pkgutil.iter_modules([str(pkg_dir)]):
-        if is_pkg or module_name == 'base':
+        if is_pkg or module_name == 'base' or module_name.startswith('_'):
             continue
         try:
             mod = importlib.import_module(f'.{module_name}', package=__package__)
@@ -58,4 +73,20 @@ def _auto_discover():
                 except Exception:
                     continue
                 if instance.op and instance.op not in _REGISTRY:
-                    register_shape(instance)
+                    _REGISTRY[instance.op] = instance
+                    added = True
+    for json_path in sorted(pkg_dir.glob('*.json')):
+        if json_path.name.startswith('_'):
+            continue
+        try:
+            instance = load_json_shape(json_path)
+        except Exception:
+            continue
+        if instance.op and instance.op not in _REGISTRY:
+            _REGISTRY[instance.op] = instance
+            added = True
+    if added:
+        notify_change()
+
+
+_auto_discover()

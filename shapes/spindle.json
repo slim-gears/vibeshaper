@@ -1,0 +1,55 @@
+{
+  "op": "spindle",
+  "name": "Spindle",
+  "order": 56,
+  "prompt": [
+    "{\"op\": \"spindle\", \"id\": name, \"collet\": \"ER8\"|\"ER11\"|\"ER16\"|\"ER20\" (optional, default \"ER11\"), \"diameter\": body (optional, default 52 mm),",
+    " \"length\": body (optional, default 160 mm), \"nose\": collet nut diameter (optional, default 19 mm), \"nose_len\": (optional, default 25 mm), \"note\": text (optional, e.g. \"300 W, 48 V\")}",
+    "  A DC milling spindle (bought part). The bottom face of the body is the xy plane at z = 0; the body goes up, the",
+    "  collet nose down to z = -\"<id>_nose_len\". Clamp it around \"<id>_diameter\"."
+  ],
+  "inputs": {
+    "collet": {"choices": ["ER8", "ER11", "ER16", "ER20"], "default": "ER11"},
+    "diameter": {"type": "length", "default": 52.0},
+    "length": {"type": "length", "default": 160.0},
+    "nose": {"type": "length", "default": 19.0},
+    "nose_len": {"type": "length", "default": 25.0}
+  },
+  "parameters": {
+    "boss": "26 mm",
+    "boss_len": "6 mm",
+    "shaft": "12 mm",
+    "shaft_len": "5 mm",
+    "cap_h": "4 mm",
+    "terminal": "4 mm",
+    "terminal_h": "5 mm",
+    "terminal_gap": "16 mm",
+    "collet_bore": "7 mm"
+  },
+  "bom": [
+    {"category": "Motion", "item": "{collet} DC spindle, {diameter} mm body", "whole": true}
+  ],
+  "timeline": [
+    {"op": "sketch", "id": "sk", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": "diameter"}]},
+    {"op": "extrude", "id": "body", "sketch": "sk", "distance": "length", "mode": "new_body"},
+    {"op": "chamfer", "id": "body_edges", "distance": "1 mm", "edges": {"feature": "body", "type": "circle"}},
+    {"op": "sketch", "id": "cap_sk", "plane": "xy", "offset": "length", "entities": [{"type": "circle", "center": [0, 0], "diameter": "diameter - 6 mm"}]},
+    {"op": "extrude", "id": "cap", "sketch": "cap_sk", "distance": "cap_h", "mode": "join"},
+    {"op": "chamfer", "id": "cap_edge", "distance": "0.8 mm", "edges": {"feature": "cap", "faces": "end", "type": "circle"}},
+    {"op": "sketch", "id": "terminal_sk", "plane": "xy", "offset": "length + cap_h", "entities": [
+      {"type": "circle", "center": ["terminal_gap / 2", 0], "diameter": "terminal"},
+      {"type": "circle", "center": ["-terminal_gap / 2", 0], "diameter": "terminal"}
+    ]},
+    {"op": "extrude", "id": "terminals", "sketch": "terminal_sk", "distance": "terminal_h", "mode": "join"},
+    {"op": "sketch", "id": "boss_sk", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": "boss"}]},
+    {"op": "extrude", "id": "boss_body", "sketch": "boss_sk", "distance": "-boss_len", "mode": "join"},
+    {"op": "chamfer", "id": "boss_edge", "distance": "0.5 mm", "edges": {"feature": "boss_body", "faces": "end", "type": "circle"}},
+    {"op": "sketch", "id": "shaft_sk", "plane": "xy", "offset": "-boss_len", "entities": [{"type": "circle", "center": [0, 0], "diameter": "shaft"}]},
+    {"op": "extrude", "id": "shaft_body", "sketch": "shaft_sk", "distance": "-shaft_len", "mode": "join"},
+    {"op": "sketch", "id": "nut_sk", "plane": "xy", "offset": "-(boss_len + shaft_len)", "entities": [{"type": "circle", "center": [0, 0], "diameter": "nose"}]},
+    {"op": "extrude", "id": "nut", "sketch": "nut_sk", "distance": "boss_len + shaft_len - nose_len", "mode": "join"},
+    {"op": "chamfer", "id": "nut_edge", "distance": "1 mm", "edges": {"feature": "nut", "faces": "end", "type": "circle"}},
+    {"op": "sketch", "id": "collet_sk", "plane": "xy", "offset": "-nose_len", "entities": [{"type": "circle", "center": [0, 0], "diameter": "collet_bore"}]},
+    {"op": "extrude", "sketch": "collet_sk", "distance": "3 mm", "mode": "cut"}
+  ]
+}

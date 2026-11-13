@@ -1,0 +1,23 @@
+{
+  "op": "lead_screw",
+  "name": "Lead screw",
+  "order": 52,
+  "prompt": [
+    "{\"op\": \"lead_screw\", \"id\": name, \"length\": length, \"diameter\": mm (optional, default 8), \"lead\": mm per turn (optional, default 2), \"note\": text (optional)}",
+    "  A trapezoidal lead screw (bought part), drawn as a plain rod along +z from z = 0. Order lengths are rounded up to the",
+    "  next stock length (100, 150, 200 ... mm), so pick one of those. Pair it with a lead_nut."
+  ],
+  "inputs": {
+    "length": {"required": true, "type": "length"},
+    "diameter": {"type": "number", "default": 8},
+    "lead": {"type": "number", "default": 2}
+  },
+  "bom": [
+    {"category": "Motion", "item": "T{diameter} lead screw, lead {lead} mm, {length}", "length": "length", "stock": [100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 700, 800, 1000], "whole": true}
+  ],
+  "timeline": [
+    {"op": "sketch", "id": "sk", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": "diameter"}]},
+    {"op": "extrude", "id": "rod", "sketch": "sk", "distance": "length", "mode": "new_body"},
+    {"op": "chamfer", "distance": "0.5 mm", "edges": {"feature": "rod", "type": "circle"}}
+  ]
+}

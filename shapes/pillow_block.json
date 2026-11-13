@@ -1,0 +1,54 @@
+{
+  "op": "pillow_block",
+  "name": "Pillow block bearing",
+  "order": 54,
+  "prompt": [
+    "{\"op\": \"pillow_block\", \"id\": name, \"model\": \"KP08\" (optional, default \"KP08\"), \"note\": text (optional)}",
+    "  A pillow block bearing (bought part) for the free end of a lead screw. Base on z = 0, centered on the origin, shaft",
+    "  along y at height \"<id>_center_h\". Parameters: \"<id>_bore\", \"<id>_length\" (base, along x), \"<id>_width\" (along y),",
+    "  \"<id>_hole_spacing\" (2 base holes on the x axis), \"<id>_hole\"."
+  ],
+  "inputs": {
+    "model": {"choices": ["KP08"], "default": "KP08"}
+  },
+  "presets": {
+    "key": "model",
+    "values": {
+      "KP08": {"bore": 8.0, "center_h": 15.0, "length": 55.0, "width": 13.0, "hole_spacing": 42.0, "hole": 5.0, "base_t": 5.0, "housing": 28.0}
+    }
+  },
+  "parameters": {
+    "corner": "3 mm",
+    "seal": "19 mm",
+    "inner": "12 mm"
+  },
+  "bom": [
+    {"category": "Motion", "item": "{model} pillow block bearing, {bore} mm bore", "whole": true}
+  ],
+  "timeline": [
+    {"op": "sketch", "id": "base_sk", "plane": "xy", "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "length", "height": "width"}]},
+    {"op": "extrude", "id": "base", "sketch": "base_sk", "distance": "base_t", "mode": "new_body"},
+    {"op": "fillet", "id": "base_corners", "radius": "corner", "edges": "vertical"},
+    {"op": "chamfer", "id": "base_edge", "distance": "0.5 mm", "edges": {"feature": "base", "faces": "end"}},
+    {"op": "sketch", "id": "post_sk", "plane": "xy", "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "housing", "height": "width"}]},
+    {"op": "extrude", "id": "post", "sketch": "post_sk", "distance": "center_h", "mode": "join"},
+    {"op": "sketch", "id": "housing_sk", "plane": "xz", "offset": "-width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "housing"}]},
+    {"op": "extrude", "id": "housing_body", "sketch": "housing_sk", "distance": "width", "mode": "join"},
+    {"op": "sketch", "id": "seal_sk", "plane": "xz", "offset": "-width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "seal"}]},
+    {"op": "extrude", "id": "seal", "sketch": "seal_sk", "distance": "0.6 mm", "mode": "cut"},
+    {"op": "sketch", "id": "seal2_sk", "plane": "xz", "offset": "width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "seal"}]},
+    {"op": "extrude", "id": "seal2", "sketch": "seal2_sk", "distance": "-0.6 mm", "mode": "cut"},
+    {"op": "sketch", "id": "inner_sk", "plane": "xz", "offset": "-width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "inner"}]},
+    {"op": "extrude", "id": "inner", "sketch": "inner_sk", "distance": "0.6 mm", "mode": "join"},
+    {"op": "sketch", "id": "inner2_sk", "plane": "xz", "offset": "width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "inner"}]},
+    {"op": "extrude", "id": "inner2", "sketch": "inner2_sk", "distance": "-0.6 mm", "mode": "join"},
+    {"op": "sketch", "id": "bore_sk", "plane": "xz", "offset": "-width / 2", "entities": [{"type": "circle", "center": [0, "center_h"], "diameter": "bore"}]},
+    {"op": "extrude", "id": "bore_cut", "sketch": "bore_sk", "distance": "width", "mode": "cut"},
+    {"op": "chamfer", "id": "bore_edge", "distance": "0.3 mm", "edges": {"feature": "bore_cut", "type": "circle"}},
+    {"op": "sketch", "id": "hole_sk", "plane": "xy", "entities": [
+      {"type": "circle", "center": ["hole_spacing / 2", 0], "diameter": "hole"},
+      {"type": "circle", "center": ["-hole_spacing / 2", 0], "diameter": "hole"}
+    ]},
+    {"op": "extrude", "sketch": "hole_sk", "distance": "base_t", "mode": "cut"}
+  ]
+}

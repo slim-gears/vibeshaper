@@ -1,0 +1,58 @@
+{
+  "op": "nema_motor",
+  "name": "NEMA stepper motor",
+  "order": 50,
+  "prompt": [
+    "{\"op\": \"nema_motor\", \"id\": name, \"size\": \"14\"|\"17\"|\"23\", \"length\": body length (e.g. 40 mm), \"note\": text (optional, e.g. \"1.5 A, 0.42 N·m\")}",
+    "  A stepper motor (bought part): square body, pilot boss, shaft, the 4 tapped holes on the face and the cable connector",
+    "  on the -y side near the back. The face is the xy plane at z = 0, the body goes down, the shaft points up (+z) from [0, 0]. Model it in its own component and place it",
+    "  with instances; design mounts around \"<id>_pitch\" (hole spacing), \"<id>_pilot\" (boss) and \"<id>_face\" (body width)."
+  ],
+  "inputs": {
+    "size": {"required": true, "choices": ["14", "17", "23"]},
+    "length": {"required": true, "type": "length"}
+  },
+  "presets": {
+    "key": "size",
+    "values": {
+      "14": {"corner": 3.5, "face": 35.2, "pitch": 26.0, "hole": 3.0, "hole_depth": 3.5, "pilot": 22.0, "pilot_h": 2.0, "shaft": 5.0, "shaft_len": 20.0},
+      "17": {"corner": 4.0, "face": 42.3, "pitch": 31.0, "hole": 3.0, "hole_depth": 4.5, "pilot": 22.0, "pilot_h": 2.0, "shaft": 5.0, "shaft_len": 24.0},
+      "23": {"corner": 5.0, "face": 56.4, "pitch": 47.14, "hole": 5.0, "hole_depth": 5.0, "pilot": 38.1, "pilot_h": 1.6, "shaft": 6.35, "shaft_len": 21.0}
+    }
+  },
+  "parameters": {
+    "flat_len": "15 mm",
+    "plug_w": "16 mm",
+    "plug_h": "8 mm",
+    "plug_out": "4 mm"
+  },
+  "bom": [
+    {"category": "Motion", "item": "NEMA{size} stepper motor, {face} mm square, body {length}", "length": "length", "whole": true}
+  ],
+  "timeline": [
+    {"op": "sketch", "id": "body_sk", "plane": "xy", "entities": [{"type": "center_rectangle", "center": [0, 0], "width": "face", "height": "face"}]},
+    {"op": "extrude", "id": "body", "sketch": "body_sk", "distance": "-length", "mode": "new_body"},
+    {"op": "chamfer", "id": "corners", "distance": "corner", "edges": "vertical"},
+    {"op": "chamfer", "id": "front_edge", "distance": "0.5 mm", "edges": {"feature": "body", "faces": "start"}},
+    {"op": "chamfer", "id": "back_edge", "distance": "0.5 mm", "edges": {"feature": "body", "faces": "end"}},
+    {"op": "sketch", "id": "pilot_sk", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": "pilot"}]},
+    {"op": "extrude", "id": "pilot_boss", "sketch": "pilot_sk", "distance": "pilot_h", "mode": "join"},
+    {"op": "chamfer", "id": "pilot_edge", "distance": "0.4 mm", "edges": {"feature": "pilot_boss", "faces": "end", "type": "circle"}},
+    {"op": "sketch", "id": "shaft_sk", "plane": "xy", "offset": "pilot_h", "entities": [{"type": "circle", "center": [0, 0], "diameter": "shaft"}]},
+    {"op": "extrude", "id": "shaft_body", "sketch": "shaft_sk", "distance": "shaft_len - pilot_h", "mode": "join"},
+    {"op": "chamfer", "id": "shaft_tip", "distance": "0.4 mm", "edges": {"feature": "shaft_body", "faces": "end"}},
+    {"op": "sketch", "id": "flat_sk", "plane": "xy", "offset": "shaft_len", "entities": [{"type": "center_rectangle", "center": ["shaft / 2 + 0.25 mm", 0], "width": "1.5 mm", "height": "shaft + 1 mm"}]},
+    {"op": "extrude", "id": "flat", "sketch": "flat_sk", "distance": "-flat_len", "mode": "cut"},
+    {"op": "sketch", "id": "plug_sk", "plane": "xy", "offset": "1 mm - length", "entities": [{"type": "center_rectangle", "center": [0, "-(face / 2 + plug_out / 2 - 0.5 mm)"], "width": "plug_w", "height": "plug_out + 1 mm"}]},
+    {"op": "extrude", "id": "plug", "sketch": "plug_sk", "distance": "plug_h", "mode": "join"},
+    {"op": "sketch", "id": "socket_sk", "plane": "xz", "offset": "-(face / 2 + plug_out)", "entities": [{"type": "center_rectangle", "center": [0, "1 mm - length + plug_h / 2"], "width": "plug_w - 4 mm", "height": "plug_h - 3 mm"}]},
+    {"op": "extrude", "id": "socket", "sketch": "socket_sk", "distance": "plug_out - 0.5 mm", "mode": "cut"},
+    {"op": "sketch", "id": "hole_sk", "plane": "xy", "entities": [
+      {"type": "circle", "center": ["pitch / 2", "pitch / 2"], "diameter": "hole"},
+      {"type": "circle", "center": ["pitch / 2", "-pitch / 2"], "diameter": "hole"},
+      {"type": "circle", "center": ["-pitch / 2", "pitch / 2"], "diameter": "hole"},
+      {"type": "circle", "center": ["-pitch / 2", "-pitch / 2"], "diameter": "hole"}
+    ]},
+    {"op": "extrude", "sketch": "hole_sk", "distance": "-hole_depth", "mode": "cut"}
+  ]
+}

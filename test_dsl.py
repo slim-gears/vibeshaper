@@ -192,7 +192,8 @@ assert [(p.order, p.name) for p in all_provs] == sorted((p.order, p.name) for p 
 # The core knows no provider: no provider id or provider-specific setting key appears in core files
 _HERE = pathlib.Path(__file__).parent
 _core_py = ('VibeShaper.py', 'llm.py', 'chat.py', 'dsl.py', 'providers/__init__.py', 'providers/base.py',
-            'tools/__init__.py', 'tools/base.py')
+            'tools/__init__.py', 'tools/base.py', 'features/__init__.py', 'features/base.py',
+            'features/entities/__init__.py', 'features/entities/base.py')
 _panel = (_HERE / 'palette/app.js').read_text(encoding='utf-8')
 _panel = _panel[:_panel.index('// MockBackend:')]  # the browser-preview mock may use sample providers
 _core_src = {f: (_HERE / f).read_text(encoding='utf-8') for f in _core_py}
@@ -829,7 +830,7 @@ mock_adsk.core = mock_core
 sys.modules['adsk'] = mock_adsk
 sys.modules['adsk.core'] = mock_core
 
-from dsl import _select_edges
+from features._helpers import select_edges as _select_edges
 vert_line = MockLine3D(MockPoint3D(0, 0, 0), MockPoint3D(0, 0, 10))
 horiz_line = MockLine3D(MockPoint3D(0, 0, 0), MockPoint3D(10, 0, 0))
 test_body = MockBody([MockEdge(vert_line), MockEdge(horiz_line)])
@@ -868,7 +869,7 @@ inp = mock_shells.createInput(shell_col, False)
 assert inp == "mock_shell_input"
 
 # Test sketch constraint logic
-from dsl import _draw
+from features.entities import draw as _draw
 
 class MockSKPt:
     def __init__(self, x=0, y=0):
@@ -1120,7 +1121,7 @@ assert '(40 mm) - (10 mm)' in exprs5b and '(30 mm) - (10 mm)' in exprs5b
 assert exprs5b.count('10 mm') == 2
 
 # Distances are magnitudes: a negative coordinate is dimensioned as its negation
-from dsl import _span_ex
+from features._helpers import span_ex as _span_ex
 assert _span_ex(dummy_ex, 0, 0.0, 'a', -1.0) == '-(a)'
 assert _span_ex(dummy_ex, 'a', 2.0, 'b', 1.0) == '(a) - (b)'
 
@@ -1191,7 +1192,7 @@ _fails(_poly(sides=2, diameter=10), 'sides')
 _fails(_poly(sides=6, diameter=10, across_flats=8), 'either diameter')
 
 # Test 5e: A circular pattern around an off-origin center gets a parametric axis
-from dsl import _axis_through
+from features.circular_pattern import _axis_through
 
 class _AxisRoot:
     def __init__(self):
@@ -1302,7 +1303,7 @@ assert _new_lines[1].startSketchPoint in [p for a in _arcs5[1:] for p in (a.star
 assert _new_lines[1].endSketchPoint is _new_lines[2].startSketchPoint   # a shared corner gets one mirrored point
 assert _new_lines[2].endSketchPoint is _ents['half'][3].endSketchPoint  # ...and the other end is on the line
 # A copy that comes out looser than its fully constrained original gets the curves tied too
-from dsl import _mirror_curves
+from features.entities.mirror import _mirror_curves
 sk5n = MockSketchObj()
 _ents = {}
 for _e in [{"type": "polyline", "id": "p", "points": [[10, 0], [20, 0], [20, 10]]},
@@ -1416,7 +1417,8 @@ import math
 import shapes as shape_registry
 _ops = [s.op for s in shape_registry.get_all_shapes()]
 assert 'spur_gear' in _ops
-for _f in ('dsl.py', 'llm.py', 'VibeShaper.py', 'bom.py', 'shapes/__init__.py', 'shapes/base.py'):
+for _f in ('dsl.py', 'llm.py', 'VibeShaper.py', 'bom.py', 'shapes/__init__.py', 'shapes/base.py', 'shapes/_json.py',
+           'features/__init__.py', 'features/base.py', 'features/entities/__init__.py', 'features/entities/base.py'):
     _src = (_HERE / _f).read_text(encoding='utf-8')
     for _op in _ops:
         assert not _re.search(rf'\b{_re.escape(_op)}\b', _src), f'{_f} mentions the shape {_op!r}'
@@ -1498,7 +1500,7 @@ class _OnEdge:
         self.geometry = types.SimpleNamespace(curveType=2 if circle else 1, center=_V(0, 0, z))
         self.faces = MockEdgeCollection([])
 
-from dsl import _edge_on_sketch_plane
+from features._helpers import edge_on_sketch_plane as _edge_on_sketch_plane
 _top_sk = types.SimpleNamespace(origin=_V(0, 0, 0.5), xDirection=_V(1, 0, 0), yDirection=_V(0, 1, 0))
 _rim_top, _rim_bottom = _OnEdge(0.5), _OnEdge(0.0)
 assert _edge_on_sketch_plane(_rim_top, _top_sk) and not _edge_on_sketch_plane(_rim_bottom, _top_sk)
@@ -1594,8 +1596,9 @@ _fails(_shape('vent_grid', id='v', width=60, height=40, size=5, depth=-2, rows=0
 
 
 # A join, cut or intersect changes only its own component's bodies, never a part placed against it
-_own = lambda bodies, mode: dsl_mod._own_bodies(SimpleNamespace(), SimpleNamespace(bRepBodies=_FakeBodies(bodies)),
-                                                mode)
+import features._helpers as _feat_helpers
+_own = lambda bodies, mode: _feat_helpers.own_bodies(SimpleNamespace(), SimpleNamespace(bRepBodies=_FakeBodies(bodies)),
+                                                     mode)
 class _FakeBodies:
     def __init__(self, items):
         self.items, self.count = items, len(items)
@@ -1605,9 +1608,12 @@ assert _own(['rail_bar'], 'cut').participantBodies == ['rail_bar']
 assert _own(['a', 'b'], 'join').participantBodies == ['a', 'b'] and _own(['a'], 'intersect').participantBodies == ['a']
 assert not hasattr(_own(['a'], 'new_body'), 'participantBodies')
 assert not hasattr(_own([], 'cut'), 'participantBodies')            # nothing of its own yet: leave Fusion's default
-_dsl_src = (_HERE / 'dsl.py').read_text(encoding='utf-8')
+_feat_src = '\n'.join(
+    p.read_text(encoding='utf-8') for p in (_HERE / 'features').glob('*.py')
+    if p.name != 'base.py' and not p.name.startswith('_')
+)
 for _call in ('feats.createInput', 'revolves.createInput', 'sweeps.createInput(prof_arg', 'sweeps.createInput(prof,'):
-    assert f'_own_bodies({_call}' in _dsl_src, _call                  # every feature that can cut is limited
+    assert f'h.own_bodies({_call}' in _feat_src, _call                 # every feature that can cut is limited
 
 # Bill of materials: expressions are evaluated without Fusion
 import bom as bom_mod
@@ -3060,5 +3066,467 @@ assert _c.current_version()['n'] == 2 and H.last_ai()['status'] == 'done', H.las
 assert _c.current_version()['dsl']['parameters'] == {'tbl_leg': '45 mm', 'tbl_x': '120 mm'}
 assert H.design.userParameters.d['tbl_x'].expression == '120 mm'
 assert _v1_group not in [g.name for g in H.design.timeline.groups]  # v1 replaced
+
+# 19. Feature & sketch entity plugins: core stays plugin-neutral and dynamic registration updates
+# JSON_SCHEMA (preserving object identity) and llm.SYSTEM / llm.system_prompt() live.
+import features as _feat_reg
+import features.entities as _ent_reg
+
+_all_feats = _feat_reg.get_all_features()
+_feat_ops = [f.op for f in _all_feats]
+assert len(_feat_ops) == 13
+assert [(f.order, f.op) for f in _all_feats] == sorted((f.order, f.op) for f in _all_feats)
+
+_all_ents = _ent_reg.get_all_entities()
+_ent_types = [e.type for e in _all_ents]
+assert len(_ent_types) == 8
+assert [(e.order, e.type) for e in _all_ents] == sorted((e.order, e.type) for e in _all_ents)
+
+for _f in ('dsl.py', 'VibeShaper.py', 'bom.py', 'chat.py', 'userdata.py',
+           'features/__init__.py', 'features/base.py', 'features/entities/__init__.py',
+           'features/entities/base.py', 'shapes/__init__.py', 'shapes/base.py', 'shapes/_json.py'):
+    _src = (_HERE / _f).read_text(encoding='utf-8')
+    for _op in _feat_ops:
+        assert f"'{_op}'" not in _src and f'"{_op}"' not in _src, f'{_f} hardcodes feature op {_op!r}'
+for _f in ('dsl.py', 'VibeShaper.py', 'bom.py', 'chat.py', 'userdata.py',
+           'features/__init__.py', 'features/base.py', 'features/sketch.py',
+           'features/entities/__init__.py', 'features/entities/base.py',
+           'shapes/__init__.py', 'shapes/base.py', 'shapes/_json.py'):
+    _src = (_HERE / _f).read_text(encoding='utf-8')
+    for _et in _ent_types:
+        assert f"'{_et}'" not in _src and f'"{_et}"' not in _src, f'{_f} hardcodes entity type {_et!r}'
+
+_orig_schema_id = id(dsl_mod.JSON_SCHEMA)
+_orig_tl_id = id(dsl_mod.JSON_SCHEMA['properties']['timeline'])
+
+class _DummyFeature(_feat_reg.BaseFeature):
+    op = 'zz_loft'
+    name = 'ZZ Loft'
+    order = 999
+    prompt = 'ZZ Loft: {"op": "zz_loft", "zz_rail": "rail_id"}'
+    rules = '- Prefer zz_loft for smooth custom lofts.'
+    schema = {'zz_rail': {'type': 'string'}}
+
+    def pattern_copies(self, step, fid, ev):
+        return 3 if step.get('feature') == fid else 1
+
+_feat_reg.register_feature(_DummyFeature())
+try:
+    assert id(dsl_mod.JSON_SCHEMA) == _orig_schema_id
+    assert id(dsl_mod.JSON_SCHEMA['properties']['timeline']) == _orig_tl_id
+    assert dsl_mod.JSON_SCHEMA['properties']['components']['items']['properties']['timeline'] is dsl_mod.JSON_SCHEMA['properties']['timeline']
+    _tl_props = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']
+    assert 'zz_loft' in _tl_props['op']['enum'] and 'zz_rail' in _tl_props
+    assert 'zz_loft' in llm.SYSTEM and 'Prefer zz_loft' in llm.SYSTEM
+    assert 'zz_loft' in llm.system_prompt()
+    validate({'parameters': {}, 'timeline': [{'op': 'zz_loft', 'zz_rail': 'r1'}]})
+    _custom_bom = bom_mod.collect({'parameters': {}, 'timeline': [
+        {'op': 'nema_motor', 'id': 'mot1', 'size': 17, 'length': 40},
+        {'op': 'zz_loft', 'feature': 'mot1'},
+    ]})
+    assert [r for r in _custom_bom if 'NEMA' in r['Item']][0]['Qty'] == 3
+finally:
+    _feat_reg.unregister_feature('zz_loft')
+
+_tl_props_after = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']
+assert 'zz_loft' not in _tl_props_after['op']['enum'] and 'zz_rail' not in _tl_props_after
+assert 'zz_loft' not in llm.SYSTEM
+
+_drawn_custom = []
+class _DummyEntity(_ent_reg.BaseEntity):
+    type = 'zz_oval'
+    name = 'ZZ Oval'
+    order = 999
+    required = ('zz_major',)
+    prompt = '{"type": "zz_oval", "zz_major": d}'
+    schema = {'zz_major': {'type': ['string', 'number']}}
+
+    def draw(self, sk, entity, ctx):
+        _drawn_custom.append(entity['zz_major'])
+        ctx.register(entity, ['oval'])
+
+_ent_reg.register_entity(_DummyEntity())
+try:
+    assert id(dsl_mod.JSON_SCHEMA) == _orig_schema_id
+    _ent_props = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items']['properties']
+    assert 'zz_oval' in _ent_props['type']['enum'] and 'zz_major' in _ent_props
+    assert 'zz_oval' in llm.SYSTEM and 'zz_oval' in llm.system_prompt()
+    validate({'parameters': {}, 'timeline': [{'op': 'sketch', 'id': 's', 'plane': 'xy',
+                                              'entities': [{'type': 'zz_oval', 'zz_major': 12}]}]})
+    _ent_map = {}
+    _ent_reg.draw(MockSketchObj(), {'type': 'zz_oval', 'id': 'ov', 'zz_major': '10 mm'},
+                  dummy_ex, dummy_cm, dummy_pt, _ent_map)
+    assert _drawn_custom == ['10 mm'] and _ent_map['ov'] == ['oval']
+finally:
+    _ent_reg.unregister_entity('zz_oval')
+
+_ent_props_after = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items']['properties']
+assert 'zz_oval' not in _ent_props_after['type']['enum'] and 'zz_major' not in _ent_props_after
+assert 'zz_oval' not in llm.SYSTEM
+
+# ----- Declarative .json shape macros + reload -----
+for _jop in ('nema_motor', 'pillow_block', 'spindle', 'lead_screw'):
+    assert isinstance(shape_registry.get_shape(_jop), shape_registry.JsonShape), _jop
+assert isinstance(shape_registry.get_shape('lead_nut'), shape_registry.BaseShape)
+assert not isinstance(shape_registry.get_shape('lead_nut'), shape_registry.JsonShape)
+
+# A plain single-part design JSON becomes a parametric shape by adding "op" and "prompt",
+# with auto-prefixed parameters/IDs, preserved sketch-local entity IDs, caller overrides, and nested shapes.
+_macro_design = {
+    'op': 'zz_bracket',
+    'name': 'ZZ Bracket',
+    'order': 999,
+    'prompt': ['{"op": "zz_bracket", "id": name}  A bracket with mirrored mounting tabs and nested bolt holes.'],
+    'parameters': {'inner_w': '20 mm', 'wall': '4 mm', 'outer_w': 'inner_w + 2 * wall', 'holes_n': 2},
+    'timeline': [
+        {'op': 'sketch', 'id': 'sk', 'plane': 'xy', 'entities': [
+            {'type': 'center_rectangle', 'center': [0, 0], 'width': 'outer_w', 'height': 'wall * 5'},
+            {'type': 'circle', 'id': 'tab_hole', 'center': ['outer_w / 2 - wall', 0], 'diameter': '3 mm'},
+            {'type': 'mirror', 'entities': ['tab_hole'], 'line': [[0, 0], [0, 1]]},
+        ]},
+        {'op': 'extrude', 'id': 'pad', 'sketch': 'sk', 'distance': 'wall', 'mode': 'new_body'},
+        {'op': 'bolt_hole', 'id': 'bh', 'size': 'M5', 'depth': 'wall', 'center': ['-inner_w / 4', 0],
+         'screw': {'length': 12}},
+        {'op': 'linear_pattern', 'id': 'fin', 'feature': 'bh', 'axis': 'x', 'quantity': 'holes_n', 'distance': '10 mm'},
+    ],
+}
+with tempfile.TemporaryDirectory() as _jdir:
+    _jpath = pathlib.Path(_jdir) / 'zz_bracket.json'
+    _jpath.write_text(json.dumps(_macro_design), encoding='utf-8')
+    _jshape = shape_registry.load_json_shape(_jpath)
+shape_registry.register_shape(_jshape)
+try:
+    _jprops = dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']
+    assert 'zz_bracket' in _jprops['op']['enum'] and 'inner_w' in _jprops and 'holes_n' in _jprops
+    assert 'zz_bracket' in llm.SYSTEM
+    _jd = {'parameters': {'custom_w': '30 mm'}, 'timeline': [
+        {'op': 'zz_bracket', 'id': 'b1', 'inner_w': 'custom_w'},
+        {'op': 'linear_pattern', 'feature': 'b1', 'axis': 'y', 'quantity': 3, 'distance': '40 mm'},
+    ]}
+    validate(_jd)
+    _jx = dsl_mod.expand_shapes(_jd)
+    assert not any(shape_registry.get_shape(s['op']) for s in _jx['timeline'])
+    assert _jx['parameters']['b1_inner_w'] == '(custom_w)'
+    assert _jx['parameters']['b1_outer_w'] == 'b1_inner_w + 2 * b1_wall'
+    assert _jx['parameters']['b1_holes_n'] == 2
+    _jby = {s.get('id'): s for s in _jx['timeline']}
+    assert _jby['b1_sk']['entities'][1]['id'] == 'tab_hole'
+    assert _jby['b1_sk']['entities'][2]['entities'] == ['tab_hole']
+    _jv, _jev = _eval_params(_jx['parameters'])
+    assert len(_sketch_loops(_jby['b1_sk']['entities'], _jev)) == 3  # rectangle + mirrored pair of circles
+    assert abs(_jv['b1_outer_w'] - 38.0) < 1e-9  # 30 + 2 * 4
+    assert _jby['b1_pad']['id'] == 'b1_pad' and _jby['b1']['op'] == 'linear_pattern'
+    assert _jby['b1_bh']['mode'] == 'cut' and 'b1_bh_sk' in _jby
+    _jbom = _bom(_jd)
+    assert ('Made', 'Main part') in _jbom
+    assert _jbom[('Fasteners', 'M5x12 socket head cap screw (ISO 4762)')]['Qty'] == 6  # 2 internal x 3 outer copies
+finally:
+    shape_registry.unregister_shape('zz_bracket')
+assert 'zz_bracket' not in dsl_mod.JSON_SCHEMA['properties']['timeline']['items']['properties']['op']['enum']
+assert 'zz_bracket' not in llm.SYSTEM
+
+# Cyclic .json shapes are rejected rather than looping indefinitely
+_cyc_a = shape_registry.JsonShape({'op': 'zz_cyc_a', 'timeline': [{'op': 'zz_cyc_b', 'id': 'x'}]})
+_cyc_b = shape_registry.JsonShape({'op': 'zz_cyc_b', 'timeline': [{'op': 'zz_cyc_a', 'id': 'y'}]})
+shape_registry.register_shape(_cyc_a)
+shape_registry.register_shape(_cyc_b)
+try:
+    _fails({'parameters': {}, 'timeline': [{'op': 'zz_cyc_a', 'id': 'top'}]}, 'maximum depth')
+finally:
+    shape_registry.unregister_shape('zz_cyc_a')
+    shape_registry.unregister_shape('zz_cyc_b')
+
+_before_ops = [s.op for s in shape_registry.get_all_shapes()]
+shape_registry = importlib.reload(shape_registry)
+assert [s.op for s in shape_registry.get_all_shapes()] == _before_ops
+
+# ----- Per-component sibling timeline groups + reverse-order collapsing -----
+class _SlotItem:
+    def __init__(self, tag, timeline):
+        self.tag, self._tl = tag, timeline
+        self.isGroup, self.parentGroup = False, None
+        self.index = -1
+        self.refuse = False
+        self.entity = SimpleNamespace(deleteMe=self._delete_entity)
+
+    def _delete_entity(self):
+        if self.refuse:
+            raise RuntimeError('3 : could not delete')
+        if self in self._tl.slots:
+            self._tl.slots.remove(self)
+        if self.parentGroup and self in self.parentGroup._items:
+            self.parentGroup._items.remove(self)
+        self._tl._reindex()
+        return True
+
+
+class _SlotGroup:
+    def __init__(self, name, items, timeline):
+        self.name, self._items, self._tl = name, list(items), timeline
+        self.isGroup, self.parentGroup = True, None
+        self.isCollapsed, self.isSuppressed, self.refuse_delete = False, False, False
+        self.index = -1
+        for it in self._items:
+            it.parentGroup = self
+            it.index = -1
+
+    count = property(lambda self: len(self._items))
+
+    def item(self, k):
+        return self._items[k]
+
+    def deleteMe(self, with_contents=True):
+        if with_contents and self.refuse_delete:
+            raise RuntimeError('2 : InternalValidationError : res')
+        self._tl.deleted_order.append(self.name)
+        if self in self._tl.groups:
+            self._tl.groups.remove(self)
+        if self in self._tl.slots:
+            self._tl.slots.remove(self)
+        if with_contents:
+            self._items.clear()
+        else:
+            for it in self._items:
+                it.parentGroup = None
+        self._tl._reindex()
+        return True
+
+
+class _SlotGroupsColl:
+    def __init__(self, tl):
+        self._tl = tl
+
+    count = property(lambda self: len(self._tl.groups))
+
+    def item(self, k):
+        return self._tl.groups[k]
+
+    def add(self, start_idx, end_idx):
+        slots = self._tl.slots
+        # Real Fusion rejects invalid ranges, single items (sometimes), and nested groups
+        if start_idx < 0 or end_idx >= len(slots) or start_idx >= end_idx:
+            raise RuntimeError(f'bad group range {start_idx}..{end_idx}')
+        span = slots[start_idx:end_idx + 1]
+        if any(it.isGroup for it in span):
+            raise RuntimeError('nested timeline group')
+        g = _SlotGroup('', span, self._tl)
+        slots[start_idx:end_idx + 1] = [g]
+        self._tl.groups.append(g)
+        self._tl._reindex()
+        return g
+
+
+class _SlotTimeline:
+    def __init__(self):
+        self.slots, self.groups, self.deleted_order = [], [], []
+        self.moved_to_end = False
+
+    count = property(lambda self: len(self.slots))
+    markerPosition = property(lambda self: len(self.slots))
+    timelineGroups = property(lambda self: _SlotGroupsColl(self))
+
+    def item(self, k):
+        return self.slots[k]
+
+    def moveToEnd(self):
+        self.moved_to_end = True
+
+    def _reindex(self):
+        for i, s in enumerate(self.slots):
+            s.index = i
+
+    def append_item(self, tag):
+        it = _SlotItem(tag, self)
+        self.slots.append(it)
+        self._reindex()
+        return it
+
+
+class _SlotParams:
+    def __init__(self):
+        self.d = {}
+
+    count = property(lambda self: len(self.d))
+
+    def item(self, k):
+        return list(self.d.values())[k]
+
+    def itemByName(self, name):
+        return self.d.get(name)
+
+    def add(self, name, val, unit, comment):
+        p = SimpleNamespace(name=name, expression=val, unit=unit)
+        p.deleteMe = lambda: (self.d.pop(name, None) is not None)
+        self.d[name] = p
+        return p
+
+
+class _SlotComp:
+    xYConstructionPlane = 'xy'
+    xZConstructionPlane = 'xz'
+    yZConstructionPlane = 'yz'
+    xConstructionAxis = 'x'
+    yConstructionAxis = 'y'
+    zConstructionAxis = 'z'
+
+    def __init__(self, design, name):
+        self._design, self.name = design, name
+        self.occurrences = SimpleNamespace(
+            addNewComponent=self._add_new,
+            addExistingComponent=self._add_existing,
+        )
+
+    def _add_new(self, m):
+        comp = _SlotComp(self._design, f'Comp{len(self._design._reg) + 1}')
+        tok = f'occ_tok_{len(self._design._reg)}'
+        occ = SimpleNamespace(component=comp, isValid=True, entityToken=tok, name='')
+        self._design._reg[tok] = occ
+        self._design.timeline.append_item(('occ', tok))
+        return occ
+
+    def _add_existing(self, comp, m):
+        tok = f'occ_tok_{len(self._design._reg)}'
+        occ = SimpleNamespace(component=comp, isValid=True, entityToken=tok, name='')
+        self._design._reg[tok] = occ
+        self._design.timeline.append_item(('occ', tok))
+        return occ
+
+
+class _SlotDesign:
+    def __init__(self):
+        self.designType = mock_fusion.DesignTypes.ParametricDesignType
+        self.timeline = _SlotTimeline()
+        self.userParameters = _SlotParams()
+        self.unitsManager = SimpleNamespace(
+            isValidExpression=lambda s, u: True,
+            evaluateExpression=lambda s, u: 1.0,
+        )
+        self._reg = {}
+        self.rootComponent = _SlotComp(self, 'root')
+
+    def findEntityByToken(self, tok):
+        e = self._reg.get(tok)
+        return [e] if e is not None else []
+
+
+class _FakeMatrix:
+    @staticmethod
+    def create():
+        return _FakeMatrix()
+
+    def setToRotation(self, a, v, o):
+        pass
+
+    def transformBy(self, r):
+        pass
+
+    translation = None
+
+
+class _SlotStepFeature(_feat_reg.BaseFeature):
+    op = 'zz_step'
+    name = 'ZZ Step'
+    order = 999
+
+    def execute(self, step, ctx):
+        ctx.root._design.timeline.append_item(('step', ctx.root.name, step.get('id')))
+
+
+_saved_adsk = {
+    'Matrix3D': getattr(mock_core, 'Matrix3D', None),
+    'ValueInput': getattr(mock_core, 'ValueInput', None),
+    'Vector3D': getattr(mock_core, 'Vector3D', None),
+    'Point3D_create': getattr(mock_core.Point3D, 'create', None),
+    'FeatureOperations': getattr(mock_fusion, 'FeatureOperations', None),
+}
+mock_core.Matrix3D = _FakeMatrix
+mock_core.ValueInput = SimpleNamespace(createByString=lambda s: s)
+mock_core.Vector3D = SimpleNamespace(create=lambda x, y, z: (x, y, z))
+mock_core.Point3D.create = staticmethod(lambda x, y, z: (x, y, z))
+mock_fusion.FeatureOperations = SimpleNamespace(
+    NewBodyFeatureOperation=0, JoinFeatureOperation=1,
+    CutFeatureOperation=2, IntersectFeatureOperation=3,
+)
+_feat_reg.register_feature(_SlotStepFeature())
+try:
+    # 1. Single-part build still produces one group named exactly `group_name`
+    _sdes = _SlotDesign()
+    _sinfo = dsl.execute(_sdes, {'parameters': {}, 'timeline': [
+        {'op': 'zz_step', 'id': 'a'}, {'op': 'zz_step', 'id': 'b'}]}, group_name='VibeShaper · Solo · v1 [s1]')
+    assert _sinfo['group_name'] == 'VibeShaper · Solo · v1 [s1]'
+    assert _sinfo['feature_count'] == 2
+    assert [g.name for g in dsl.find_groups(_sdes, 'VibeShaper · Solo · v1 [s1]')] == ['VibeShaper · Solo · v1 [s1]']
+
+    # 2. Multi-component assembly creates collapsed sibling groups in reverse index order
+    _mdes = _SlotDesign()
+    _mdsl = {
+        'parameters': {'w': '10 mm'},
+        'timeline': [{'op': 'zz_step', 'id': 'r1'}, {'op': 'zz_step', 'id': 'r2'}],
+        'components': [
+            {'id': 'left_b', 'name': 'Bracket', 'timeline': [{'op': 'zz_step', 'id': 'b1'}]},
+            {'id': 'right_b', 'name': 'Bracket', 'timeline': [{'op': 'zz_step', 'id': 'b2'}]},
+            {'id': 'cap', 'name': 'Cap', 'timeline': [{'op': 'zz_step', 'id': 'c1'}, {'op': 'zz_step', 'id': 'c2'}]},
+        ],
+        'instances': [
+            {'component': 'left_b', 'position': ['w', 0, 0]},
+            {'component': 'left_b', 'position': ['-w', 0, 0]},
+            {'component': 'right_b', 'position': [0, 'w', 0]},
+            {'component': 'cap', 'position': [0, 0, 'w']},
+        ],
+    }
+    _minfo = dsl.execute(_mdes, _mdsl, group_name='VibeShaper · Asm · v1 [a1]')
+    _expected_groups = [
+        'VibeShaper · Asm · v1 [a1] / Root',
+        'VibeShaper · Asm · v1 [a1] / Bracket (left_b)',
+        'VibeShaper · Asm · v1 [a1] / Bracket (right_b)',
+        'VibeShaper · Asm · v1 [a1] / Cap',
+    ]
+    _found = dsl.find_groups(_mdes, 'VibeShaper · Asm · v1 [a1]')
+    assert _minfo['group_name'] == 'VibeShaper · Asm · v1 [a1]'
+    assert _minfo['feature_count'] == 10  # 2 root steps + (2 occs + 1 step) + (1 occ + 1 step) + (1 occ + 2 steps)
+    assert [g.name for g in _found] == _expected_groups
+    assert all(g.isCollapsed for g in _found)
+    assert dsl.find_group(_mdes, 'VibeShaper · Asm · v1 [a1]') is _found[0]
+    assert dsl.find_groups(_mdes, 'VibeShaper') == []  # prefix separator avoids cross-chat matches
+    assert [it.tag for it in _found[0]._items] == [('step', 'root', 'r1'), ('step', 'root', 'r2')]
+    assert [it.tag[0] for it in _found[1]._items] == ['occ', 'occ', 'step']
+    assert [it.tag[0] for it in _found[3]._items] == ['occ', 'step', 'step']
+
+    # user_features_after ignores later VibeShaper groups and counts only user features after all siblings
+    _mdes.timeline.append_item(('other', 1))
+    _mdes.timeline.append_item(('other', 2))
+    _og = _mdes.timeline.timelineGroups.add(_mdes.timeline.count - 2, _mdes.timeline.count - 1)
+    _og.name = 'VibeShaper · Other · v1 [o1]'
+    assert dsl.user_features_after(_mdes, 'VibeShaper · Asm · v1 [a1]') == 0
+    _mdes.timeline.append_item(('user', 1))
+    _mdes.timeline.append_item(('user', 2))
+    assert dsl.user_features_after(_mdes, 'VibeShaper · Asm · v1 [a1]') == 2
+
+    # delete_version removes every sibling group in reverse order, leaving other groups and user items intact
+    assert dsl.delete_version(_mdes, 'VibeShaper · Asm · v1 [a1]', ['w'], _minfo['occurrences']) == 'deleted'
+    assert _mdes.timeline.deleted_order == list(reversed(_expected_groups))
+    assert [g.name for g in _mdes.timeline.groups] == ['VibeShaper · Other · v1 [o1]']
+    assert _mdes.timeline.count == 3  # _og slot + 2 loose user items
+    assert 'w' not in _mdes.userParameters.d
+
+    # Fallback suppression applies across all un-deletable sibling groups
+    _fdes = _SlotDesign()
+    dsl.execute(_fdes, _mdsl, group_name='VibeShaper · Lock · v1 [l1]')
+    for _g in dsl.find_groups(_fdes, 'VibeShaper · Lock · v1 [l1]'):
+        _g.refuse_delete = True
+        for _it in _g._items:
+            _it.refuse = True
+    assert dsl.delete_version(_fdes, 'VibeShaper · Lock · v1 [l1]', []) == 'suppressed'
+    assert all(_g.isSuppressed for _g in dsl.find_groups(_fdes, 'VibeShaper · Lock · v1 [l1]'))
+finally:
+    _feat_reg.unregister_feature('zz_step')
+    mock_core.Matrix3D = _saved_adsk['Matrix3D']
+    mock_core.ValueInput = _saved_adsk['ValueInput']
+    mock_core.Vector3D = _saved_adsk['Vector3D']
+    if _saved_adsk['Point3D_create'] is None:
+        delattr(mock_core.Point3D, 'create')
+    else:
+        mock_core.Point3D.create = _saved_adsk['Point3D_create']
+    mock_fusion.FeatureOperations = _saved_adsk['FeatureOperations']
 
 print('ok')

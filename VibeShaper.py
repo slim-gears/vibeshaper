@@ -22,16 +22,28 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from . import chat, dsl, llm, providers, shapes, userdata
+from . import chat, dsl, features, llm, providers, shapes, userdata
 from . import tools as toolbox
 
 def _reload_plugins(package):
-    """Reload a plugin package's interface (base), every plugin, then the registry (which re-discovers
-    them). Reloading only the package would leave old plugin code in place after Stop/Run."""
+    """Reload a plugin package's interface (base), helpers, subpackages, plugins, then registry."""
     prefix = package.__name__ + '.'
-    subs = sorted((n for n in list(sys.modules) if n.startswith(prefix)),  # base, then _helpers, then plugins
-                  key=lambda n: (n != prefix + 'base', not n[len(prefix):].startswith('_')))
-    for name in subs:
+    subpkgs, mods = [], []
+    for n in list(sys.modules):
+        if not n.startswith(prefix):
+            continue
+        tail = n[len(prefix):]
+        if '.' in tail:
+            continue
+        mod = sys.modules[n]
+        if hasattr(mod, '__path__'):
+            subpkgs.append(mod)
+        else:
+            mods.append(n)
+    for sub in sorted(subpkgs, key=lambda m: m.__name__):
+        _reload_plugins(sub)
+    mods.sort(key=lambda n: (n != prefix + 'base', not n[len(prefix):].startswith('_')))
+    for name in mods:
         importlib.reload(sys.modules[name])
     importlib.reload(package)
 
@@ -40,6 +52,7 @@ def _reload_providers():
     _reload_plugins(providers)
 
 
+_reload_plugins(features)  # before dsl, which reads the features when it loads
 _reload_plugins(shapes)  # before dsl, which reads the shapes when it loads
 importlib.reload(dsl)  # pick up edits on add-in Stop/Run without restarting Fusion
 importlib.reload(userdata)
@@ -600,6 +613,8 @@ def _build_progress(c, t):
 
 class _BuildExecute(adsk.core.CommandEventHandler):
     def notify(self, args):
+        _reload_plugins(features)  # live hot-load feature/entity plugin edits
+        _reload_plugins(shapes)  # live hot-load shape plugin edits
         importlib.reload(dsl)  # live hot-load dsl.py edits without restarting add-in
         c, t = _job_target()
         d = _job.get('dsl')

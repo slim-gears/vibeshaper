@@ -246,9 +246,22 @@ The tools the model can call are plug-ins too, in the `tools/` folder. The curre
 
 ### Adding Shapes
 
-Ready-made parts the model can ask for in one step, such as the spur gear (`shapes/spur_gear.py`), are plug-ins in the `shapes/` folder. A shape adds a step type and turns it into ordinary parameters and steps, so it never calls Fusion and is easy to test.
+Ready-made parts the model can ask for in one step are plug-ins in the `shapes/` folder. A shape adds a step type and turns it into ordinary parameters and steps, so it never calls Fusion and is easy to test.
 
-1. Create a file in `shapes/` (e.g. `shapes/sprocket.py`).
+**Declarative JSON macro (easiest — no Python required):**
+Any single-part VibeShaper design JSON becomes a reusable parametric shape by dropping it into `shapes/` (e.g. `shapes/clip.json`) with `"op"` and `"prompt"`:
+```json
+{
+  "op": "clip",
+  "prompt": "{\"op\": \"clip\", \"id\": name}  A snap-on pipe clip.",
+  "parameters": {"pipe_d": "16 mm", "wall": "2 mm"},
+  "timeline": [...]
+}
+```
+Parameter names and step IDs inside the file are automatically prefixed with `<id>_` when expanded (with the final step given `<id>`), caller step keys override matching parameters, and optional `"inputs"`, `"presets"`, and `"bom"` blocks add choice validation, preset tables, and bill-of-materials rows.
+
+**Python plug-in (for branching or computed geometry such as `shapes/spur_gear.py`):**
+1. Create a `.py` file in `shapes/` (e.g. `shapes/sprocket.py`).
 2. Subclass `BaseShape`:
    ```python
    from .base import BaseShape
@@ -271,7 +284,32 @@ Ready-made parts the model can ask for in one step, such as the spur gear (`shap
            return [{'category': 'Motion', 'item': 'Sprocket, 20 teeth', 'whole': True}]
    ```
    A bought part returns itself from `bom()` with `"whole": True` (see [the bill of materials](DSL_SPEC.md#516-bill-of-materials-bom-and-material)); a shape that is made, not bought, leaves it out.
-3. VibeShaper discovers it automatically, adds it to the reply schema and the system prompt, and expands it before validating and building.
+
+VibeShaper discovers both `.json` macros and `.py` `BaseShape` classes automatically, adds them to the reply schema and the system prompt, and expands nested shapes before validating and building.
+
+### Adding Features
+
+Timeline operations live under `features/` (and sketch entity types under `features/entities/`), each in its own standalone file:
+
+1. Create a file in `features/` (e.g. `features/loft.py`) and subclass `BaseFeature` from `features/base.py`:
+   ```python
+   from .base import BaseFeature
+
+   class LoftFeature(BaseFeature):
+       op = 'loft'
+       name = 'Loft'
+       order = 35
+       prompt = 'Loft:\n   {"op": "loft", "sketches": [sk1, sk2]}'
+       schema = {'sketches': {'type': 'array', 'items': {'type': 'string'}}}
+
+       def validate(self, step, where, ctx):
+           ...                               # raise ValueError(f'{where}: ...') for bad input
+
+       def execute(self, step, ctx):
+           ...                               # build in Fusion via ctx (sketches, features, root, ex, cm)
+   ```
+2. To add a new sketch entity type, drop a `BaseEntity` subclass (`features/entities/base.py`) into `features/entities/` defining `type`, `order`, `required`, `prompt`, `schema`, `validate()`, and `draw()`.
+3. VibeShaper discovers both automatically and updates `dsl.JSON_SCHEMA` and the LLM system prompt live.
 
 ---
 

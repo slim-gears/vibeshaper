@@ -1,51 +1,17 @@
-"""Trapezoidal lead screw (T8 and similar) and its flanged nut, as sold for 3D printers and
-small CNC machines.
+"""Flanged nut (brass or POM anti-backlash) for a trapezoidal T8 lead screw.
 
 The nut's sizes are those of the common T8 brass and POM anti-backlash nuts (22 mm flange,
 four 3.5 mm holes on a 16 mm circle). Makers differ, so check them; every size is a parameter.
-The screw runs along +z from z = 0. The nut's flange face (the face it is mounted by) is the xy
-plane at z = 0, with the flange above it and the body below.
+The nut's flange face (the face it is mounted by) is the xy plane at z = 0, with the flange
+above it and the body below.
 """
 from .base import BaseShape
 from . import _parts as p
 
-STOCK = [100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 700, 800, 1000]
 NUT = {'flange': 22.0, 'flange_t': 3.5, 'body': 10.2, 'pcd': 16.0, 'hole': 3.5, 'bore': 8.0}
 NUT_LENGTH = {False: 15.0, True: 25.0}  # plain brass nut; nut with a spring-loaded second half
 SPRING = {'neck': 9.0, 'neck_len': 6.0, 'half_len': 7.0}  # anti-backlash: spring section and second half
 NUT_KEYS = ('flange', 'flange_t', 'body', 'pcd', 'hole', 'bore', 'length')
-
-
-class LeadScrew(BaseShape):
-    op = 'lead_screw'
-    name = 'Lead screw'
-    order = 52
-    schema = dict({'diameter': {'type': ['string', 'number']}, 'lead': {'type': ['string', 'number']},
-                   'length': {'type': ['string', 'number']}}, **p.PLAIN_KEYS)
-    prompt = '''{"op": "lead_screw", "id": name, "length": length, "diameter": mm (optional, default 8), "lead": mm per turn (optional, default 2), "note": text (optional)}
-  A trapezoidal lead screw (bought part), drawn as a plain rod along +z from z = 0. Order lengths are rounded up to the
-  next stock length (100, 150, 200 ... mm), so pick one of those. Pair it with a lead_nut.'''
-
-    def validate(self, step, where):
-        p.check(step, where, ('length',))
-        for key in ('diameter', 'lead'):
-            if key in step and (p.num(step[key]) is None or p.num(step[key]) <= 0):
-                raise ValueError(f'{where}: {key} must be a number of mm, more than 0')
-
-    def expand(self, step):
-        gid = step['id']
-        n = lambda k: f'{gid}_{k}'
-        params = {n('diameter'): p.length(step.get('diameter', 8)), n('lead'): p.length(step.get('lead', 2)),
-                  n('length'): p.length(step['length'])}
-        steps = [p.sketch(n('sk'), [p.circle([0, 0], n('diameter'))]),
-                 p.extrude(n('rod'), n('sk'), n('length'), 'new_body'),
-                 p.chamfer(gid, '0.5 mm', {'feature': n('rod'), 'type': 'circle'})]
-        return params, steps
-
-    def bom(self, step):
-        d, lead = p.num(step.get('diameter', 8)), p.num(step.get('lead', 2))
-        return [p.item('Motion', f'T{d:g} lead screw, lead {lead:g} mm, {{length}}', step,
-                       length=step['length'], stock=STOCK)]
 
 
 class LeadNut(BaseShape):

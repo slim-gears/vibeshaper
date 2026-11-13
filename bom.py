@@ -19,9 +19,10 @@ import re
 import sys
 
 try:
-    from . import dsl, shapes
+    from . import dsl, features, shapes
 except ImportError:  # run as a plain script (tests, the command line)
     import dsl
+    import features
     import shapes
 
 _UNITS = {'mm': 1.0, 'cm': 10.0, 'm': 1000.0, 'in': 25.4, 'deg': math.pi / 180, 'rad': 1.0}
@@ -91,11 +92,10 @@ def _pattern_copies(timeline, fid, ev):
     if not fid:
         return copies
     for s in timeline:
-        if isinstance(s, dict) and s.get('op') in ('circular_pattern', 'linear_pattern') and s.get('feature') == fid:
-            n = round(ev(s.get('quantity', 1)))
-            if s.get('op') == 'linear_pattern' and 'quantity2' in s:
-                n *= round(ev(s['quantity2']))
-            copies *= max(n, 1)
+        if isinstance(s, dict):
+            feat = features.get_feature(s.get('op'))
+            if feat is not None:
+                copies *= feat.pattern_copies(s, fid, ev)
     return copies
 
 
@@ -159,6 +159,10 @@ def collect(d):
             if shape:
                 copies = _pattern_copies(tl[i + 1:], s.get('id'), ev)
                 whole = add(shape.bom(s) or [], times * copies, f'{label}[{i}] ({s["op"]}) bom') or whole
+                if 'id' in s:
+                    _, sub_tl = shape.expand(s)
+                    if any(isinstance(x, dict) and shapes.get_shape(x.get('op')) for x in sub_tl):
+                        whole = timeline(sub_tl, times * copies, f'{label}[{i}]') or whole
         return whole
 
     def made(name, material, times):

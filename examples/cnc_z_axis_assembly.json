@@ -1,0 +1,391 @@
+{
+  "name": "CNC Z-Axis Slide & Spindle Actuator",
+  "parameters": {
+    "plate_w": "104 mm",
+    "plate_len": "230 mm",
+    "back_t": "10 mm",
+    "riser_t": "10 mm",
+    "screw_z": "25 mm",
+    "rail_span": "64 mm",
+    "rail_y0": "25 mm",
+    "rail_len": "175 mm",
+    "carriage_y": "110 mm",
+    "carriage_pitch": "60 mm",
+    "saddle_w": "96 mm",
+    "saddle_h": "110 mm",
+    "clamp_z": "76 mm",
+    "clamp_len": "36 mm",
+    "spindle_d": "52.2 mm"
+  },
+  "timeline": [],
+  "components": [
+    {
+      "id": "backplate",
+      "name": "Z-Axis Backplate",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "plate_sk",
+          "plane": "xy",
+          "offset": "-back_t",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "plate_len / 2"], "width": "plate_w", "height": "plate_len"}
+          ]
+        },
+        {"op": "extrude", "id": "plate_body", "sketch": "plate_sk", "distance": "back_t", "mode": "new_body"},
+        {"op": "fillet", "id": "plate_corners", "radius": "6 mm", "edges": "vertical"},
+        {
+          "op": "sketch",
+          "id": "pad_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "12 mm"], "width": "60 mm", "height": "20 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pad_body", "sketch": "pad_sk", "distance": "riser_t", "mode": "join"},
+        {
+          "op": "bolt_hole",
+          "id": "kp_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": "riser_t",
+          "depth": "-riser_t",
+          "points": [["-21 mm", "12 mm"], ["21 mm", "12 mm"]],
+          "screw": {"length": 16, "nut": "hex", "washer": true}
+        },
+        {
+          "op": "vent_grid",
+          "id": "center_vent",
+          "plane": "xy",
+          "offset": 0,
+          "center": [0, "105 mm"],
+          "width": "34 mm",
+          "height": "115 mm",
+          "hole": "hexagon",
+          "size": "8 mm",
+          "wall": "2.5 mm",
+          "depth": "-back_t"
+        },
+        {
+          "op": "bolt_hole",
+          "id": "frame_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": 0,
+          "depth": "-back_t",
+          "head": "counterbore",
+          "points": [["-42 mm", "12 mm"], ["42 mm", "12 mm"], ["-42 mm", "plate_len - 14 mm"], ["42 mm", "plate_len - 14 mm"]],
+          "screw": {"length": 16, "nut": "t_nut_20"}
+        },
+        {
+          "op": "bolt_hole",
+          "id": "rail_hole",
+          "size": "M3",
+          "fit": "close",
+          "plane": "xy",
+          "offset": 0,
+          "depth": "-back_t",
+          "points": [["-rail_span / 2", "rail_y0 + 12.5 mm"], ["rail_span / 2", "rail_y0 + 12.5 mm"]],
+          "screw": {"length": 12}
+        },
+        {
+          "op": "linear_pattern",
+          "id": "rail_holes",
+          "feature": "rail_hole",
+          "direction": "y",
+          "quantity": 7,
+          "distance": "25 mm"
+        }
+      ]
+    },
+    {
+      "id": "motor_mount",
+      "name": "NEMA17 Top Motor Bracket",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "flange_sk",
+          "plane": "xz",
+          "offset": "plate_len - 8 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "screw_z"], "width": "92 mm", "height": "50 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "flange", "sketch": "flange_sk", "distance": "8 mm", "mode": "new_body"},
+        {
+          "op": "sketch",
+          "id": "pilot_sk",
+          "plane": "xz",
+          "offset": "plate_len - 8 mm",
+          "entities": [
+            {"type": "circle", "center": [0, "screw_z"], "diameter": "23 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pilot_cut", "sketch": "pilot_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "nema_bolts",
+          "size": "M3",
+          "plane": "xz",
+          "offset": "plate_len - 8 mm",
+          "depth": "8 mm",
+          "points": [
+            ["-15.5 mm", "screw_z - 15.5 mm"],
+            ["15.5 mm", "screw_z - 15.5 mm"],
+            ["-15.5 mm", "screw_z + 15.5 mm"],
+            ["15.5 mm", "screw_z + 15.5 mm"]
+          ],
+          "screw": {"length": 12}
+        },
+        {
+          "op": "sketch",
+          "id": "base_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "plate_len - 18 mm"], "width": "92 mm", "height": "20 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "base", "sketch": "base_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "bolt_hole",
+          "id": "mount_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": "8 mm",
+          "depth": "-8 mm",
+          "head": "counterbore",
+          "points": [["-34 mm", "plate_len - 18 mm"], ["34 mm", "plate_len - 18 mm"]],
+          "screw": {"length": 16}
+        },
+        {
+          "op": "sketch",
+          "id": "gusset_sk",
+          "plane": "yz",
+          "offset": "24 mm",
+          "entities": [
+            {
+              "type": "polygon",
+              "points": [
+                ["plate_len - 28 mm", "8 mm"],
+                ["plate_len - 8 mm", "8 mm"],
+                ["plate_len - 8 mm", "48 mm"]
+              ]
+            }
+          ]
+        },
+        {"op": "extrude", "id": "gusset", "sketch": "gusset_sk", "distance": "6 mm", "mode": "join"},
+        {"op": "mirror", "id": "gusset_mirror", "feature": "gusset", "plane": "yz", "combine": true}
+      ]
+    },
+    {
+      "id": "rail",
+      "name": "MGN12 Rail",
+      "timeline": [
+        {"op": "linear_rail", "id": "rail", "series": "MGN12", "length": "rail_len"}
+      ]
+    },
+    {
+      "id": "carriage",
+      "name": "MGN12H Carriage",
+      "timeline": [
+        {"op": "rail_carriage", "id": "carriage", "series": "MGN12", "block": "H"}
+      ]
+    },
+    {
+      "id": "motor",
+      "name": "NEMA17 Stepper",
+      "timeline": [
+        {"op": "nema_motor", "id": "motor", "size": "17", "length": "40 mm", "note": "1.5 A, 0.42 N·m"}
+      ]
+    },
+    {
+      "id": "coupler",
+      "name": "5x8 Jaw Coupler",
+      "timeline": [
+        {"op": "shaft_coupler", "id": "coupler", "bore1": 5, "bore2": 8}
+      ]
+    },
+    {
+      "id": "screw",
+      "name": "T8 Lead Screw",
+      "timeline": [
+        {"op": "lead_screw", "id": "screw", "length": "192 mm", "lead": 8}
+      ]
+    },
+    {
+      "id": "nut",
+      "name": "T8 Anti-Backlash Nut",
+      "timeline": [
+        {"op": "lead_nut", "id": "nut", "lead": 8, "anti_backlash": true}
+      ]
+    },
+    {
+      "id": "bearing",
+      "name": "KP08 Lower Bearing",
+      "timeline": [
+        {"op": "pillow_block", "id": "bearing", "model": "KP08"}
+      ]
+    },
+    {
+      "id": "z_saddle",
+      "name": "Z-Carriage & Split Spindle Clamp",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "plate_sk",
+          "plane": "xy",
+          "offset": "37 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, 0], "width": "saddle_w", "height": "saddle_h"}
+          ]
+        },
+        {"op": "extrude", "id": "saddle_plate", "sketch": "plate_sk", "distance": "8 mm", "mode": "new_body"},
+        {"op": "fillet", "id": "saddle_corners", "radius": "5 mm", "edges": "vertical"},
+        {
+          "op": "sketch",
+          "id": "pads_sk",
+          "plane": "xy",
+          "offset": "13 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": ["-rail_span / 2", 0], "width": "28 mm", "height": "saddle_h"},
+            {"type": "center_rectangle", "center": ["rail_span / 2", 0], "width": "28 mm", "height": "saddle_h"}
+          ]
+        },
+        {"op": "extrude", "id": "pads", "sketch": "pads_sk", "distance": "24 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "nut_web_sk",
+          "plane": "xz",
+          "offset": "10 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "25 mm"], "width": "36 mm", "height": "24 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "nut_web", "sketch": "nut_web_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "nut_bore_sk",
+          "plane": "xz",
+          "offset": "10 mm",
+          "entities": [
+            {"type": "circle", "center": [0, "25 mm"], "diameter": "11 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "nut_bore", "sketch": "nut_bore_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "nut_bolts",
+          "size": "M3",
+          "plane": "xz",
+          "offset": "10 mm",
+          "depth": "8 mm",
+          "points": [
+            ["-8 mm", "25 mm"],
+            ["8 mm", "25 mm"],
+            [0, "17 mm"],
+            [0, "33 mm"]
+          ],
+          "screw": {"length": 12, "nut": "nyloc"}
+        },
+        {
+          "op": "bolt_hole",
+          "id": "carriage_bolts",
+          "size": "M3",
+          "plane": "xy",
+          "offset": "45 mm",
+          "depth": "-32 mm",
+          "head": "counterbore",
+          "points": [
+            ["-42 mm", "-40 mm"], ["-22 mm", "-40 mm"], ["-42 mm", "-20 mm"], ["-22 mm", "-20 mm"],
+            ["-42 mm", "20 mm"], ["-22 mm", "20 mm"], ["-42 mm", "40 mm"], ["-22 mm", "40 mm"],
+            ["22 mm", "-40 mm"], ["42 mm", "-40 mm"], ["22 mm", "-20 mm"], ["42 mm", "-20 mm"],
+            ["22 mm", "20 mm"], ["42 mm", "20 mm"], ["22 mm", "40 mm"], ["42 mm", "40 mm"]
+          ],
+          "screw": {"length": 35}
+        },
+        {
+          "op": "sketch",
+          "id": "clamp_sk",
+          "plane": "xz",
+          "offset": "-clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "clamp_z"], "width": "68 mm", "height": "62 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "clamp_body", "sketch": "clamp_sk", "distance": "clamp_len", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "pinch_sk",
+          "plane": "xz",
+          "offset": "-clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "107 mm"], "width": "36 mm", "height": "14 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pinch_lug", "sketch": "pinch_sk", "distance": "clamp_len", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "clamp_bore_sk",
+          "plane": "xz",
+          "offset": "-clamp_len / 2",
+          "entities": [
+            {"type": "circle", "center": [0, "clamp_z"], "diameter": "spindle_d"}
+          ]
+        },
+        {"op": "extrude", "id": "clamp_bore", "sketch": "clamp_bore_sk", "distance": "clamp_len", "mode": "cut"},
+        {
+          "op": "sketch",
+          "id": "slit_sk",
+          "plane": "xz",
+          "offset": "-clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "107 mm"], "width": "3 mm", "height": "16 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "slit_cut", "sketch": "slit_sk", "distance": "clamp_len", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "clamp_bolts",
+          "size": "M5",
+          "plane": "yz",
+          "offset": "-18 mm",
+          "depth": "36 mm",
+          "head": "counterbore",
+          "points": [["-9 mm", "108 mm"], ["9 mm", "108 mm"]],
+          "screw": {"length": 40, "nut": "hex", "washer": true}
+        }
+      ]
+    },
+    {
+      "id": "spindle",
+      "name": "ER11 DC Spindle",
+      "timeline": [
+        {"op": "spindle", "id": "spindle", "collet": "ER11", "note": "300 W, 48 V"}
+      ]
+    }
+  ],
+  "instances": [
+    {"component": "backplate", "id": "backplate_inst", "position": [0, 0, 0]},
+    {"component": "motor_mount", "id": "motor_mount_inst", "position": [0, 0, 0]},
+    {"component": "rail", "id": "rail_left", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["-rail_span / 2", "rail_y0", 0]},
+    {"component": "rail", "id": "rail_right", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["rail_span / 2", "rail_y0", 0]},
+    {"component": "carriage", "id": "car_bl", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["-rail_span / 2", "carriage_y - carriage_pitch / 2", 0]},
+    {"component": "carriage", "id": "car_tl", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["-rail_span / 2", "carriage_y + carriage_pitch / 2", 0]},
+    {"component": "carriage", "id": "car_br", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["rail_span / 2", "carriage_y - carriage_pitch / 2", 0]},
+    {"component": "carriage", "id": "car_tr", "rotate": [{"axis": "z", "angle": "90 deg"}], "position": ["rail_span / 2", "carriage_y + carriage_pitch / 2", 0]},
+    {"component": "motor", "id": "motor_inst", "rotate": [{"axis": "x", "angle": "90 deg"}], "position": [0, "plate_len", "screw_z"]},
+    {"component": "coupler", "id": "coupler_inst", "rotate": [{"axis": "x", "angle": "90 deg"}], "position": [0, "217 mm", "screw_z"]},
+    {"component": "screw", "id": "screw_inst", "rotate": [{"axis": "x", "angle": "90 deg"}], "position": [0, "204 mm", "screw_z"]},
+    {"component": "nut", "id": "nut_inst", "rotate": [{"axis": "x", "angle": "90 deg"}], "position": [0, "carriage_y + 10 mm", "screw_z"]},
+    {"component": "bearing", "id": "kp08_inst", "position": [0, "12 mm", "riser_t"]},
+    {"component": "z_saddle", "id": "z_saddle_inst", "position": [0, "carriage_y", 0]},
+    {"component": "spindle", "id": "spindle_inst", "rotate": [{"axis": "x", "angle": "-90 deg"}], "position": [0, "carriage_y - 30 mm", "clamp_z"]}
+  ],
+  "bom": [
+    {"category": "Electronics", "item": "LJ12A3-4-Z/BX inductive Z limit switch", "qty": 2},
+    {"category": "Wiring", "item": "2-core 16 AWG shielded spindle cable", "unit": "m", "qty": "plate_len + 1200 mm", "round": 0.5}
+  ]
+}

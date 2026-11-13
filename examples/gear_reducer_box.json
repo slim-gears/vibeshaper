@@ -1,0 +1,290 @@
+{
+  "name": "2-Stage Compound Spur Gear Reducer",
+  "parameters": {
+    "gear_mod": "2 mm",
+    "z1": "15",
+    "z2": "25",
+    "z3": "13",
+    "z4": "27",
+    "stage1_cd": "gear_mod * (z1 + z2) / 2",
+    "stage2_cd": "gear_mod * (z3 + z4) / 2",
+    "out_x": "stage1_cd + stage2_cd",
+    "box_w": "152 mm",
+    "box_d": "80 mm",
+    "box_h": "36 mm",
+    "box_cx": "46 mm",
+    "wall_t": "6 mm",
+    "frame_len": "200 mm"
+  },
+  "timeline": [],
+  "components": [
+    {
+      "id": "frame_rail",
+      "name": "2020 Mounting Rail",
+      "timeline": [
+        {"op": "tslot_profile", "id": "rail", "series": "2020", "plane": "yz", "length": "frame_len"}
+      ]
+    },
+    {
+      "id": "housing",
+      "name": "Gearbox Housing",
+      "material": "PA12-CF Nylon",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "box_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "center": ["box_cx", 0], "width": "box_w", "height": "box_d"}
+          ]
+        },
+        {"op": "extrude", "id": "box_body", "sketch": "box_sk", "distance": "box_h", "mode": "new_body"},
+        {"op": "fillet", "id": "box_corners", "radius": "8 mm", "edges": "vertical"},
+        {"op": "shell", "id": "box_shell", "thickness": "wall_t", "remove_faces": "top"},
+        {
+          "op": "sketch",
+          "id": "ears_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "id": "ear_fl", "center": ["-14 mm", "-48 mm"], "width": "22 mm", "height": "22 mm"},
+            {"type": "center_rectangle", "id": "ear_fr", "center": ["106 mm", "-48 mm"], "width": "22 mm", "height": "22 mm"},
+            {"type": "mirror", "entities": ["ear_fl", "ear_fr"], "line": [[0, 0], [1, 0]]}
+          ]
+        },
+        {"op": "extrude", "id": "ears", "sketch": "ears_sk", "distance": "6 mm", "mode": "join"},
+        {
+          "op": "bolt_hole",
+          "id": "frame_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": "6 mm",
+          "depth": "-6 mm",
+          "head": "counterbore",
+          "points": [["-14 mm", "-50 mm"], ["106 mm", "-50 mm"], ["-14 mm", "50 mm"], ["106 mm", "50 mm"]],
+          "screw": {"length": 12, "nut": "t_nut_20", "washer": true}
+        },
+        {
+          "op": "sketch",
+          "id": "pilot_sk",
+          "plane": "xy",
+          "offset": "wall_t",
+          "entities": [
+            {"type": "circle", "center": [0, 0], "diameter": "23 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pilot_bore", "sketch": "pilot_sk", "distance": "-wall_t", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "motor_bolts",
+          "size": "M3",
+          "plane": "xy",
+          "offset": "wall_t",
+          "depth": "-wall_t",
+          "points": [
+            ["-15.5 mm", "-15.5 mm"],
+            ["15.5 mm", "-15.5 mm"],
+            ["-15.5 mm", "15.5 mm"],
+            ["15.5 mm", "15.5 mm"]
+          ],
+          "screw": {"length": 10}
+        },
+        {
+          "op": "sketch",
+          "id": "pin_boss_sk",
+          "plane": "xy",
+          "offset": "wall_t",
+          "entities": [
+            {"type": "circle", "center": ["stage1_cd", 0], "diameter": "16 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pin_boss", "sketch": "pin_boss_sk", "distance": "3 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "pin_sk",
+          "plane": "xy",
+          "offset": "wall_t",
+          "entities": [
+            {"type": "circle", "center": ["stage1_cd", 0], "diameter": "8 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pin_shaft", "sketch": "pin_sk", "distance": "28 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "out_bore_sk",
+          "plane": "xy",
+          "offset": "wall_t",
+          "entities": [
+            {"type": "circle", "center": ["out_x", 0], "diameter": "8.4 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "out_bore", "sketch": "out_bore_sk", "distance": "-wall_t", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "lid_inserts",
+          "size": "M3",
+          "plane": "xy",
+          "offset": "box_h",
+          "depth": "-10 mm",
+          "points": [
+            ["-27 mm", "-24 mm"], ["-27 mm", "24 mm"],
+            ["box_cx", "-37 mm"], ["box_cx", "37 mm"],
+            ["119 mm", "-24 mm"], ["119 mm", "24 mm"]
+          ],
+          "screw": {"length": 14, "head": "countersunk", "nut": "insert"}
+        }
+      ]
+    },
+    {
+      "id": "motor",
+      "name": "NEMA17 Input Motor",
+      "timeline": [
+        {"op": "nema_motor", "id": "motor", "size": "17", "length": "40 mm"}
+      ]
+    },
+    {
+      "id": "input_pinion",
+      "name": "Stage 1 Pinion (15T)",
+      "material": "17-4PH Steel",
+      "timeline": [
+        {"op": "spur_gear", "id": "pinion1", "module": "gear_mod", "teeth": "z1", "thickness": "8 mm", "bore": "5 mm"}
+      ]
+    },
+    {
+      "id": "cluster_gear",
+      "name": "Compound Intermediate Gear (25T/13T)",
+      "material": "Acetal (POM)",
+      "timeline": [
+        {"op": "spur_gear", "id": "wheel1", "module": "gear_mod", "teeth": "z2", "thickness": "8 mm", "mode": "new_body"},
+        {
+          "op": "sketch",
+          "id": "spacer_sk",
+          "plane": "xy",
+          "offset": "8 mm",
+          "entities": [
+            {"type": "circle", "center": [0, 0], "diameter": "18 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "spacer", "sketch": "spacer_sk", "distance": "2 mm", "mode": "join"},
+        {"op": "spur_gear", "id": "pinion2", "module": "gear_mod", "teeth": "z3", "offset": "10 mm", "thickness": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "bore_sk",
+          "plane": "xy",
+          "offset": "18 mm",
+          "entities": [
+            {"type": "circle", "center": [0, 0], "diameter": "8.2 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "bore", "sketch": "bore_sk", "distance": "-18 mm", "mode": "cut"}
+      ]
+    },
+    {
+      "id": "preload_spring",
+      "name": "Cluster Gear Preload Spring",
+      "material": "302 Spring Steel",
+      "timeline": [
+        {"op": "coil", "id": "spring", "diameter": "13 mm", "pitch": "3 mm", "revolutions": 3, "section_size": "1.5 mm", "axis": "z"}
+      ]
+    },
+    {
+      "id": "output_gear_shaft",
+      "name": "Output Gear & Threaded Shaft (27T)",
+      "material": "4140 Alloy Steel",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "shaft_sk",
+          "plane": "xz",
+          "entities": [
+            {
+              "type": "polygon",
+              "points": [
+                [0, 0],
+                ["4 mm", 0],
+                ["4 mm", "17 mm"],
+                ["7 mm", "17 mm"],
+                ["7 mm", "40 mm"],
+                ["6 mm", "40 mm"],
+                ["6 mm", "58 mm"],
+                [0, "58 mm"]
+              ]
+            }
+          ]
+        },
+        {"op": "revolve", "id": "shaft_rev", "sketch": "shaft_sk", "axis": "z", "mode": "new_body"},
+        {"op": "spur_gear", "id": "out_gear", "module": "gear_mod", "teeth": "z4", "offset": "17 mm", "thickness": "8 mm", "mode": "join"},
+        {"op": "thread", "id": "out_thread", "feature": "shaft_rev", "target": "external", "diameter": "12 mm", "designation": "M12x1.75", "modeled": true}
+      ]
+    },
+    {
+      "id": "lid",
+      "name": "Vented Gearbox Cover",
+      "material": "Polycarbonate",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "lid_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "center": ["box_cx", 0], "width": "box_w", "height": "box_d"}
+          ]
+        },
+        {"op": "extrude", "id": "lid_body", "sketch": "lid_sk", "distance": "4 mm", "mode": "new_body"},
+        {"op": "fillet", "id": "lid_corners", "radius": "8 mm", "edges": "vertical"},
+        {
+          "op": "sketch",
+          "id": "out_hole_sk",
+          "plane": "xy",
+          "offset": "4 mm",
+          "entities": [
+            {"type": "circle", "center": ["out_x", 0], "diameter": "15 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "out_hole", "sketch": "out_hole_sk", "distance": "-4 mm", "mode": "cut"},
+        {
+          "op": "vent_grid",
+          "id": "lid_vent",
+          "plane": "xy",
+          "offset": "4 mm",
+          "center": ["28 mm", 0],
+          "width": "62 mm",
+          "height": "46 mm",
+          "hole": "slot",
+          "size": "3 mm",
+          "length": "14 mm",
+          "wall": "3 mm",
+          "depth": "-4 mm"
+        },
+        {
+          "op": "bolt_hole",
+          "id": "lid_bolts",
+          "size": "M3",
+          "plane": "xy",
+          "offset": "4 mm",
+          "depth": "-4 mm",
+          "head": "countersink",
+          "points": [
+            ["-27 mm", "-24 mm"], ["-27 mm", "24 mm"],
+            ["box_cx", "-37 mm"], ["box_cx", "37 mm"],
+            ["119 mm", "-24 mm"], ["119 mm", "24 mm"]
+          ]
+        }
+      ]
+    }
+  ],
+  "instances": [
+    {"component": "frame_rail", "id": "rail_front", "position": ["-35 mm", "-50 mm", "-10 mm"]},
+    {"component": "frame_rail", "id": "rail_rear", "position": ["-35 mm", "50 mm", "-10 mm"]},
+    {"component": "housing", "id": "housing_inst", "position": [0, 0, 0]},
+    {"component": "motor", "id": "motor_inst", "position": [0, 0, 0]},
+    {"component": "input_pinion", "id": "pinion_inst", "position": [0, 0, "7 mm"]},
+    {"component": "cluster_gear", "id": "cluster_inst", "position": ["stage1_cd", 0, "7 mm"]},
+    {"component": "preload_spring", "id": "spring_inst", "position": ["stage1_cd", 0, "25.5 mm"]},
+    {"component": "output_gear_shaft", "id": "output_inst", "position": ["out_x", 0, 0]},
+    {"component": "lid", "id": "lid_inst", "position": [0, 0, "box_h"]}
+  ],
+  "bom": [
+    {"category": "Motion", "item": "688ZZ flanged ball bearing (8 x 16 x 5 mm)", "qty": 2},
+    {"category": "Motion", "item": "6001ZZ ball bearing (12 x 28 x 8 mm)", "qty": 1}
+  ]
+}

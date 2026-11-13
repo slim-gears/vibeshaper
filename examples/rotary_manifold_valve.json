@@ -1,0 +1,173 @@
+{
+  "name": "4-Port Flanged Rotary Manifold Valve",
+  "parameters": {
+    "flange_dia": "110 mm",
+    "flange_t": "14 mm",
+    "body_dia": "64 mm",
+    "neck_dia": "42 mm",
+    "total_h": "78 mm",
+    "bolt_pcd": "90 mm",
+    "port_qty": "4",
+    "port_reach": "48 mm",
+    "port_z": "34 mm",
+    "port_top_z": "52 mm",
+    "port_od": "20 mm",
+    "port_id": "10 mm",
+    "chamber_dia": "24 mm",
+    "inlet_dia": "20 mm"
+  },
+  "timeline": [
+    {
+      "op": "sketch",
+      "id": "revolve_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            [0, 0],
+            ["flange_dia / 2", 0],
+            ["flange_dia / 2", "flange_t"],
+            ["body_dia / 2", "flange_t"],
+            ["body_dia / 2", "total_h - 16 mm"],
+            ["neck_dia / 2", "total_h - 14 mm"],
+            ["neck_dia / 2", "total_h"],
+            [0, "total_h"]
+          ]
+        }
+      ]
+    },
+    {"op": "revolve", "id": "body_rev", "sketch": "revolve_sk", "axis": "z", "mode": "new_body"},
+    {
+      "op": "sketch",
+      "id": "hex_sk",
+      "plane": "xy",
+      "offset": "total_h - 14 mm",
+      "entities": [
+        {"type": "regular_polygon", "center": [0, 0], "sides": 6, "across_flats": "38 mm"}
+      ]
+    },
+    {"op": "extrude", "id": "hex_boss", "sketch": "hex_sk", "distance": "14 mm", "mode": "join"},
+    {"op": "chamfer", "id": "hex_top", "distance": "1.2 mm", "edges": {"feature": "hex_boss", "faces": "end"}},
+    {
+      "op": "sketch",
+      "id": "arm_path",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polyline",
+          "points": [
+            ["body_dia / 2 - 8 mm", "port_z"],
+            ["port_reach", "port_z"],
+            ["port_reach", "port_top_z"]
+          ],
+          "closed": false
+        }
+      ]
+    },
+    {
+      "op": "sketch",
+      "id": "arm_prof",
+      "plane": "xy",
+      "offset": "port_top_z",
+      "entities": [
+        {"type": "circle", "center": ["port_reach", 0], "diameter": "port_od"}
+      ]
+    },
+    {"op": "sweep", "id": "port_arm", "sketch": "arm_prof", "path": "arm_path", "mode": "join"},
+    {"op": "circular_pattern", "id": "port_arms", "feature": "port_arm", "axis": "z", "quantity": "port_qty", "angle": "360 deg"},
+    {
+      "op": "sketch",
+      "id": "collar_sk",
+      "plane": "xy",
+      "offset": "port_top_z - 5 mm",
+      "entities": [
+        {"type": "circle", "center": ["port_reach", 0], "diameter": "port_od + 6 mm"}
+      ]
+    },
+    {"op": "extrude", "id": "port_collar", "sketch": "collar_sk", "distance": "5 mm", "mode": "join"},
+    {"op": "chamfer", "id": "collar_edge", "distance": "1 mm", "edges": {"feature": "port_collar", "faces": "end", "type": "circle"}},
+    {"op": "circular_pattern", "id": "port_collars", "feature": "port_collar", "axis": "z", "quantity": "port_qty", "angle": "360 deg"},
+    {
+      "op": "sketch",
+      "id": "chamber_sk",
+      "plane": "xy",
+      "offset": "14 mm",
+      "entities": [
+        {"type": "circle", "center": [0, 0], "diameter": "chamber_dia"}
+      ]
+    },
+    {"op": "extrude", "id": "chamber_cut", "sketch": "chamber_sk", "distance": "42 mm", "mode": "cut"},
+    {
+      "op": "sketch",
+      "id": "inlet_sk",
+      "plane": "xy",
+      "offset": "total_h",
+      "entities": [
+        {"type": "circle", "center": [0, 0], "diameter": "inlet_dia"}
+      ]
+    },
+    {"op": "extrude", "id": "inlet_cut", "sketch": "inlet_sk", "distance": "-24 mm", "mode": "cut"},
+    {"op": "thread", "id": "inlet_thread", "feature": "inlet_cut", "target": "internal", "designation": "M20x2.5", "modeled": true},
+    {
+      "op": "sketch",
+      "id": "bore_path",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polyline",
+          "points": [
+            [0, "port_z"],
+            ["port_reach", "port_z"],
+            ["port_reach", "port_top_z + 1 mm"]
+          ],
+          "closed": false
+        }
+      ]
+    },
+    {
+      "op": "sketch",
+      "id": "bore_prof",
+      "plane": "xy",
+      "offset": "port_top_z + 1 mm",
+      "entities": [
+        {"type": "circle", "center": ["port_reach", 0], "diameter": "port_id"}
+      ]
+    },
+    {"op": "sweep", "id": "port_bore", "sketch": "bore_prof", "path": "bore_path", "mode": "cut"},
+    {"op": "circular_pattern", "id": "port_bores", "feature": "port_bore", "axis": "z", "quantity": "port_qty", "angle": "360 deg"},
+    {
+      "op": "sketch",
+      "id": "oring_sk",
+      "plane": "xz",
+      "entities": [
+        {
+          "type": "polygon",
+          "points": [
+            ["35 mm", 0],
+            ["39 mm", 0],
+            ["39 mm", "2.4 mm"],
+            ["35 mm", "2.4 mm"]
+          ]
+        }
+      ]
+    },
+    {"op": "revolve", "id": "oring_groove", "sketch": "oring_sk", "axis": "z", "mode": "cut"},
+    {
+      "op": "bolt_hole",
+      "id": "flange_bolt",
+      "size": "M6",
+      "plane": "xy",
+      "offset": "flange_t",
+      "depth": "-flange_t",
+      "head": "counterbore",
+      "center": ["bolt_pcd / 2", 0],
+      "screw": {"length": 25, "washer": true}
+    },
+    {"op": "circular_pattern", "id": "flange_bolts", "feature": "flange_bolt", "axis": "z", "quantity": 8, "angle": "360 deg"}
+  ],
+  "bom": [
+    {"category": "Seals", "item": "FKM O-ring 70 mm ID x 2.5 mm CS", "qty": 1},
+    {"category": "Fittings", "item": "M10x1 push-to-connect 8 mm elbow", "qty": "port_qty"}
+  ]
+}
