@@ -4,6 +4,8 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.6.0]
+
 ### Added
 - **Per-component timeline groups.** Multi-component assemblies now group each part's occurrences and features into its own collapsed `<version> / <part>` timeline group instead of one monolithic group, while keeping version replace, undo detection, and suppression atomic.
 - **Declarative JSON shape macros (`shapes/*.json`).** Any single-part design JSON can now serve as a parametric shape plugin in `shapes/` alongside Python `BaseShape` plugins, with auto-prefixed parameters and step IDs, optional `"inputs"`, `"presets"`, `"bom"`, and multi-pass nested shape expansion; `nema_motor`, `lead_screw`, `pillow_block`, and `spindle` now use `.json` macros.
@@ -66,7 +68,8 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/slim-gears/vibeshaper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/slim-gears/vibeshaper/compare/v0.2.0...v0.3.0
