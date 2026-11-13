@@ -1728,6 +1728,10 @@ validate(_m)
 assert dsl_mod.expand_shapes(_m)['parameters']['m_length'] == '(motor_len)'
 _x, _by, (_v, _ev) = _expand('nema_motor', id='m', size='17', length=40)
 assert _v['m_pitch'] == 31.0
+assert _by['m_corners']['edges'] == 'vertical' and _by['m_corners']['distance'] == 'm_corner'
+assert _by['m_socket_sk']['plane'] == 'xz' and _ev(_by['m_socket']['distance']) < _v['m_plug_out']
+_plug_y = _ev(_by['m_plug_sk']['entities'][0]['center'][1])
+assert abs(_plug_y + _ev(_by['m_plug_sk']['entities'][0]['height']) / 2 - (-42.3 / 2 + 1)) < 1e-9  # 1 mm into the body
 assert {(_ev(c['center'][0]), _ev(c['center'][1])) for c in _by['m_hole_sk']['entities']} == \
     {(15.5, 15.5), (15.5, -15.5), (-15.5, 15.5), (-15.5, -15.5)}
 _fails(_shape('nema_motor', id='m', size='19', length=40), 'size must be')
@@ -1736,12 +1740,17 @@ _x, _by, (_v, _ev) = _expand('linear_rail', id='r', series='MGN12', length=300)
 assert _v['r_count'] == 12 and _v['r_start'] == 12.5                # holes centered: (300 - 11 x 25) / 2
 assert _by['r']['op'] == 'linear_pattern' and _by['r']['quantity'] == 'r_count'
 assert _by['r_sk']['plane'] == 'yz' and _by['r_bar']['distance'] == 'r_length'
+assert _by['r_top_edge']['edges'] == {'feature': 'r_bar', 'type': 'line', 'direction': 'x', 'at': 'top'}
+assert [_ev(e['center'][0]) for e in _by['r_groove_sk']['entities']] == [6, -6] and _by['r_grooves']['mode'] == 'cut'
 _fails(_shape('linear_rail', id='r', series='MGN12', length=40), 'two hole pitches')
 _fails(_shape('linear_rail', id='r', series='MGN20', length=300), 'series must be')
 _x, _by, (_v, _ev) = _expand('rail_carriage', id='c', series='MGN12', block='C')
 assert _v['c_length'] == 34.7 and _v['c_hole_c'] == 15 and _v['c_hole_depth'] == 4.0
 assert _ev(_by['c_channel']['distance']) < _v['c_height'] - _v['c_gap']   # the channel leaves a top
-assert _ev(_by['c']['distance']) + _v['c_height'] - _v['c_rail_h'] > 0    # the holes stop above the rail
+assert _ev(_by['c_holes']['distance']) + _v['c_height'] - _v['c_rail_h'] > 0  # the holes stop above the rail
+assert abs(_v['c_length'] - 2 * _v['c_cap'] - 21.7) < 1e-9          # MGN12C steel block: 21.7 mm
+_nz = _ev(_by['c_nipple_sk']['entities'][0]['center'][1])
+assert _v['c_rail_h'] + 0.2 < _nz - 1.5 and _nz + 1.5 < _v['c_height'] - 0.6  # the nipple sits on the end cap
 assert shape_registry.get_shape('rail_carriage').bom({"id": "c", "series": "MGN9", "block": "C"})[0]['item'] == \
     'MGN9C carriage'
 _scr = _bom({"parameters": {}, "timeline": [{"op": "lead_screw", "id": "s", "length": 290, "lead": 8}]})
@@ -1750,17 +1759,29 @@ assert ('Made', 'Main part') not in _scr
 _fails(_shape('lead_screw', id='s', length=100, lead='fast'), 'lead must be')
 _x, _by, (_v, _ev) = _expand('lead_nut', id='n', anti_backlash=False)
 assert _v['n_length'] == 15 and _ev(_by['n_body_ext']['distance']) == -11.5
+assert _by['n_end_edge']['edges']['feature'] == 'n_body_ext' and 'n_neck_ext' not in _by
+_x, _by, (_v, _ev) = _expand('lead_nut', id='n')                    # anti-backlash: body, spring neck, second half
+assert _ev(_by['n_half_sk']['offset']) + _ev(_by['n_end_ext']['distance']) == _v['n_flange_t'] - _v['n_length']
+assert _v['n_neck'] < _v['n_body'] and _by['n_end_edge']['edges']['feature'] == 'n_end_ext'
 _fails(_shape('lead_nut', id='n', anti_backlash='yes'), 'anti_backlash')
 _x, _by, (_v, _ev) = _expand('pillow_block', id='k')
 assert _by['k_housing_sk']['plane'] == 'xz' and _ev(_by['k_housing_sk']['offset']) == -6.5
 assert _v['k_center_h'] + _v['k_housing'] / 2 == 29                  # KP08: 29 mm tall
+assert _by['k_seal']['mode'] == 'cut' and _by['k_inner2']['mode'] == 'join' and _v['k_bore'] < _v['k_inner'] < _v['k_seal']
 _fails(_shape('pillow_block', id='k', model='KP10'), 'model must be')
 _x, _by, (_v, _ev) = _expand('shaft_coupler', id='cp', bore1=6.35, bore2=8)
-assert _v['cp_bore1'] == 6.35 and _ev(_by['cp']['distance']) == -12.5
+assert _v['cp_bore1'] == 6.35 and _ev(_by['cp_bore2_cut']['distance']) == -12.5
+for _k, _sign in ((0, 1), (1, -1), (2, 1)):                         # slots from alternating sides
+    _sl = _by[f'cp_slot{_k}_sk']['entities'][0]
+    _cx, _w = _ev(_sl['center'][0]), _ev(_sl['width'])
+    _near = _cx - _sign * _w / 2                                     # the slot's end inside the coupler
+    assert abs(_sign * _near - (2.5 - 19 / 2)) < 1e-9                # leaves a 2.5 mm bridge
+assert _by['cp']['mode'] == 'cut' and len(_by['cp_screw_sk']['entities']) == 2
 _fails(_shape('shaft_coupler', id='cp', bore2=20), 'smaller than the diameter')
 _fails(_shape('shaft_coupler', id='cp', bore1='d'), 'bore1 must be')
 _x, _by, (_v, _ev) = _expand('spindle', id='sp', diameter=65, collet='ER16')
-assert _v['sp_diameter'] == 65 and _ev(_by['sp']['distance']) == -30
+assert _v['sp_diameter'] == 65 and _ev(_by['sp']['distance']) == 3
+assert _ev(_by['sp_nut_sk']['offset']) + _ev(_by['sp_nut']['distance']) == -_v['sp_nose_len']  # the nose ends there
 assert shape_registry.get_shape('spindle').bom({"id": "sp", "diameter": 65, "collet": "ER16"})[0]['item'] == \
     'ER16 DC spindle, 65 mm body'
 _fails(_shape('spindle', id='sp', collet='ER32'), 'collet must be')

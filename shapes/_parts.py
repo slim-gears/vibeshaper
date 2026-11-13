@@ -76,3 +76,17 @@ def item(category, text, step, **extra):
     if step.get('note'):
         it['note'] = step['note']
     return it
+
+
+def chamfer(cid, distance, edges):
+    step = {'op': 'chamfer', 'distance': distance, 'edges': edges}
+    if cid:
+        step['id'] = cid
+    return step
+
+
+def fillet(fid, radius, edges):
+    step = {'op': 'fillet', 'radius': radius, 'edges': edges}
+    if fid:
+        step['id'] = fid
+    return step

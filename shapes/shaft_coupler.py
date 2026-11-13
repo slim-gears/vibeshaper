@@ -33,14 +33,31 @@ class ShaftCoupler(BaseShape):
         gid = step['id']
         n = lambda k: f'{gid}_{k}'
         params = {n(k): f'{v:g} mm' for k, v in self._sizes(step).items()}
+        params.update({n('bridge'): '2.5 mm', n('slot_w'): '0.8 mm', n('slot_pitch'): '2.5 mm',
+                       n('screw_z'): f'({n("length")} / 2 - {n("slot_pitch")}) / 2'})
         half = f'{n("length")} / 2'
+        r_out = f'{n("diameter")} / 2 + 1 mm'
         steps = [
             p.sketch(n('sk'), [p.circle([0, 0], n('diameter'))]),
             p.extrude(n('body'), n('sk'), n('length'), 'new_body'),
+            p.chamfer(n('end_edges'), '0.5 mm', {'feature': n('body'), 'type': 'circle'}),
+        ]
+        # three slots from alternating sides, each leaving a bridge: the part that flexes
+        for k, (z, side) in enumerate(((f'{half} - {n("slot_pitch")}', ''), (half, '-'),
+                                       (f'{half} + {n("slot_pitch")}', ''))):
+            slot = p.rect([f'{side}({n("bridge")} + 1 mm) / 2', z], f'{n("diameter")} + 1 mm - {n("bridge")}',
+                          n('slot_w'))
+            steps += [p.sketch(n(f'slot{k}_sk'), [slot], plane='xz', offset=f'-({r_out})'),
+                      p.extrude(n(f'slot{k}'), n(f'slot{k}_sk'), f'2 * ({r_out})', 'cut')]
+        steps += [
             p.sketch(n('bore1_sk'), [p.circle([0, 0], n('bore1'))]),
             p.extrude(n('bore1_cut'), n('bore1_sk'), half, 'cut'),
             p.sketch(n('bore2_sk'), [p.circle([0, 0], n('bore2'))], offset=n('length')),
-            p.extrude(gid, n('bore2_sk'), f'-{half}', 'cut'),
+            p.extrude(n('bore2_cut'), n('bore2_sk'), f'-{half}', 'cut'),
+            p.sketch(n('screw_sk'), [p.circle([0, n('screw_z')], '3.3 mm'),
+                                     p.circle([0, f'{n("length")} - {n("screw_z")}'], '3.3 mm')],
+                     plane='xz', offset=r_out),
+            p.extrude(gid, n('screw_sk'), f'-({r_out})', 'cut'),   # a set screw into each hub
         ]
         return params, steps
 

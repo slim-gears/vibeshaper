@@ -11,6 +11,7 @@ SIZES = {
     'KP08': {'bore': 8.0, 'center_h': 15.0, 'length': 55.0, 'width': 13.0, 'hole_spacing': 42.0, 'hole': 5.0,
              'base_t': 5.0, 'housing': 28.0},
 }
+BEARING = {'corner': 3.0, 'seal': 19.0, 'inner': 12.0}  # base corner radius; the bearing's seal, inner ring
 KEYS = ('bore', 'center_h', 'length', 'width', 'hole_spacing', 'hole', 'base_t', 'housing')
 
 
@@ -30,18 +31,32 @@ class PillowBlock(BaseShape):
     def expand(self, step):
         gid = step['id']
         n = lambda k: f'{gid}_{k}'
-        params = p.sizes(gid, SIZES[step.get('model', 'KP08')], step, KEYS)
-        back = f'-{n("width")} / 2'
+        params = p.sizes(gid, dict(SIZES[step.get('model', 'KP08')], **BEARING), step, KEYS + tuple(BEARING))
+        back, front = f'-{n("width")} / 2', f'{n("width")} / 2'
         half = f'{n("hole_spacing")} / 2'
+        center = [0, n('center_h')]
+
+        def face_ring(key, diameter, depth, mode):  # the same ring on both faces of the housing
+            return [p.sketch(n(f'{key}_sk'), [p.circle(center, diameter)], plane='xz', offset=back),
+                    p.extrude(n(key), n(f'{key}_sk'), depth, mode),
+                    p.sketch(n(f'{key}2_sk'), [p.circle(center, diameter)], plane='xz', offset=front),
+                    p.extrude(n(f'{key}2'), n(f'{key}2_sk'), f'-{depth}', mode)]
         steps = [
             p.sketch(n('base_sk'), [p.rect([0, 0], n('length'), n('width'))]),
             p.extrude(n('base'), n('base_sk'), n('base_t'), 'new_body'),
+            p.fillet(n('base_corners'), n('corner'), 'vertical'),
+            p.chamfer(n('base_edge'), '0.5 mm', {'feature': n('base'), 'faces': 'end'}),
             p.sketch(n('post_sk'), [p.rect([0, 0], n('housing'), n('width'))]),
             p.extrude(n('post'), n('post_sk'), n('center_h'), 'join'),
-            p.sketch(n('housing_sk'), [p.circle([0, n('center_h')], n('housing'))], plane='xz', offset=back),
+            p.sketch(n('housing_sk'), [p.circle(center, n('housing'))], plane='xz', offset=back),
             p.extrude(n('housing_body'), n('housing_sk'), n('width'), 'join'),
-            p.sketch(n('bore_sk'), [p.circle([0, n('center_h')], n('bore'))], plane='xz', offset=back),
+        ]
+        steps += face_ring('seal', n('seal'), '0.6 mm', 'cut')        # the bearing's seal, a little recessed
+        steps += face_ring('inner', n('inner'), '0.6 mm', 'join')     # its inner ring, flush again
+        steps += [
+            p.sketch(n('bore_sk'), [p.circle(center, n('bore'))], plane='xz', offset=back),
             p.extrude(n('bore_cut'), n('bore_sk'), n('width'), 'cut'),
+            p.chamfer(n('bore_edge'), '0.3 mm', {'feature': n('bore_cut'), 'type': 'circle'}),
             p.sketch(n('hole_sk'), [p.circle([half, 0], n('hole')), p.circle([f'-{half}', 0], n('hole'))]),
             p.extrude(gid, n('hole_sk'), n('base_t'), 'cut'),
         ]

@@ -7,7 +7,7 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 ### Added
 - **Bill of materials.** `python bom.py design.json bom.csv` lists everything to buy and make, with quantities: bought parts, screws, cut lengths, cables in metres, and the parts to print or machine. Counts follow instances and patterns. Designs, components and shapes can add items with `"bom"`; components can name their `"material"`.
 - **Screws for bolt holes.** A `bolt_hole` with `"screw": {"length": ...}` adds its screws (rounded up to a stock length), nuts, T-nuts or heat-set inserts, and washers to the bill of materials.
-- **Bought parts as shapes:** `nema_motor` (NEMA 14/17/23), `linear_rail` and `rail_carriage` (MGN7 to MGN15), `lead_screw` and `lead_nut` (T8), `pillow_block` (KP08), `shaft_coupler` and `spindle` (ER collet). Each has its mounting holes, to design the parts around it, and lists itself in the bill of materials. `tslot_profile` lists its cut length too.
+- **Bought parts as shapes:** `nema_motor` (NEMA 14/17/23), `linear_rail` and `rail_carriage` (MGN7 to MGN15), `lead_screw` and `lead_nut` (T8), `pillow_block` (KP08), `shaft_coupler` and `spindle` (ER collet). Each has its mounting holes and the details that take up space (a motor's chamfered corners and cable connector, a carriage's end caps and grease nipple, a spindle's collet nut and power terminals), to design the parts around it, and lists itself in the bill of materials. `tslot_profile` lists its cut length too.
 
 ### Fixed
 - **A cut in one part no longer cuts the parts placed against it.** Joins, cuts and intersects (extrude, revolve, sweep, coil) change only the bodies of their own component, so a carriage's channel no longer cuts into its rail.

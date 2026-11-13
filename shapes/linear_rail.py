@@ -19,16 +19,16 @@ RAILS = {
 }
 RAIL_KEYS = ('rail_w', 'rail_h', 'pitch', 'hole', 'cbore', 'cbore_depth')
 
-# carriage: height over the rail's bottom, gap under it, width, hole spacing across (b) and
+# carriage: cap: each plastic end cap (with its seal), part of the length; height over the rail's bottom, gap under it, width, hole spacing across (b) and
 # along (c, per block type), length (per block type), mounting thread (drawn at its size)
 CARRIAGES = {
-    'MGN7': {'height': 8.0, 'gap': 1.5, 'width': 17.0, 'hole_b': 12.0, 'c': {'C': 8.0, 'H': 13.0},
+    'MGN7': {'cap': 5.7, 'height': 8.0, 'gap': 1.5, 'width': 17.0, 'hole_b': 12.0, 'c': {'C': 8.0, 'H': 13.0},
              'l': {'C': 22.5, 'H': 30.8}, 'thread': 2.0},
-    'MGN9': {'height': 10.0, 'gap': 2.0, 'width': 20.0, 'hole_b': 15.0, 'c': {'C': 10.0, 'H': 16.0},
+    'MGN9': {'cap': 6.5, 'height': 10.0, 'gap': 2.0, 'width': 20.0, 'hole_b': 15.0, 'c': {'C': 10.0, 'H': 16.0},
              'l': {'C': 28.9, 'H': 39.9}, 'thread': 3.0},
-    'MGN12': {'height': 13.0, 'gap': 3.0, 'width': 27.0, 'hole_b': 20.0, 'c': {'C': 15.0, 'H': 20.0},
+    'MGN12': {'cap': 6.5, 'height': 13.0, 'gap': 3.0, 'width': 27.0, 'hole_b': 20.0, 'c': {'C': 15.0, 'H': 20.0},
               'l': {'C': 34.7, 'H': 45.4}, 'thread': 3.0},
-    'MGN15': {'height': 16.0, 'gap': 4.0, 'width': 32.0, 'hole_b': 25.0, 'c': {'C': 20.0, 'H': 25.0},
+    'MGN15': {'cap': 7.7, 'height': 16.0, 'gap': 4.0, 'width': 32.0, 'hole_b': 25.0, 'c': {'C': 20.0, 'H': 25.0},
               'l': {'C': 42.1, 'H': 58.8}, 'thread': 3.0},
 }
 BLOCKS = ('H', 'C')
@@ -54,7 +54,10 @@ class LinearRail(BaseShape):
     def expand(self, step):
         gid = step['id']
         n = lambda k: f'{gid}_{k}'
-        params = p.sizes(gid, RAILS[step['series']], step, RAIL_KEYS)
+        r = RAILS[step['series']]
+        preset = dict(r, groove_z=round(r['rail_h'] * 0.35, 2), groove_d=round(r['rail_w'] * 0.06, 2),
+                      groove_w=round(r['rail_h'] * 0.2, 2))  # the ball track along each side
+        params = p.sizes(gid, preset, step, RAIL_KEYS + ('groove_z', 'groove_d', 'groove_w'))
         params[n('length')] = p.length(step['length'])
         params[n('count')] = f'floor({n("length")} / {n("pitch")})'
         params[n('start')] = f'({n("length")} - ({n("count")} - 1) * {n("pitch")}) / 2'
@@ -62,9 +65,15 @@ class LinearRail(BaseShape):
         def pattern(feature, pid):
             return {'op': 'linear_pattern', 'id': pid, 'feature': feature, 'direction': 'x',
                     'distance': n('pitch'), 'quantity': n('count')}
+        groove_z = f'{n("rail_h")} - {n("groove_z")}'
+        grooves = [p.rect([f'{sy}{n("rail_w")} / 2', groove_z], f'2 * {n("groove_d")}', n('groove_w'))
+                   for sy in ('', '-')]
         steps = [
             p.sketch(n('sk'), [p.rect([0, f'{n("rail_h")} / 2'], n('rail_w'), n('rail_h'))], plane='yz'),
             p.extrude(n('bar'), n('sk'), n('length'), 'new_body'),
+            p.chamfer(n('top_edge'), '0.5 mm', {'feature': n('bar'), 'type': 'line', 'direction': 'x', 'at': 'top'}),
+            p.sketch(n('groove_sk'), grooves, plane='yz'),
+            p.extrude(n('grooves'), n('groove_sk'), n('length'), 'cut'),
             p.sketch(n('hole_sk'), [p.circle([n('start'), 0], n('hole'))], offset=n('rail_h')),
             p.extrude(n('hole'), n('hole_sk'), f'-{n("rail_h")}', 'cut'),
             p.sketch(n('cbore_sk'), [p.circle([n('start'), 0], n('cbore'))], offset=n('rail_h')),
@@ -85,7 +94,7 @@ class RailCarriage(BaseShape):
     schema = dict({'series': {'type': ['string', 'number']}, 'block': {'enum': list(BLOCKS)}}, **p.PLAIN_KEYS)
     prompt = '''{"op": "rail_carriage", "id": name, "series": "MGN7"|"MGN9"|"MGN12"|"MGN15", "block": "H"|"C" (optional, default "H": long; "C": short), "note": text (optional)}
   The carriage (block) of a linear_rail (bought part), centered on x = y = 0 in the rail's axes (rail bottom on z = 0),
-  with 4 tapped holes on top. Parameters: "<id>_height" (top above the rail's bottom), "<id>_width", "<id>_length",
+  with 4 tapped holes on top, plastic end caps and a grease nipple on the +x end. Parameters: "<id>_height" (top above the rail's bottom), "<id>_width", "<id>_length",
   "<id>_hole_b" (hole spacing across), "<id>_hole_c" (along). Make it its own component and place each carriage with
   an instance at its spot along the rail.'''
 
@@ -97,21 +106,29 @@ class RailCarriage(BaseShape):
         n = lambda k: f'{gid}_{k}'
         series, block = step['series'], step.get('block', 'H')
         c = CARRIAGES[series]
-        preset = {'height': c['height'], 'gap': c['gap'], 'width': c['width'], 'hole_b': c['hole_b'],
+        preset = {'cap': c['cap'], 'height': c['height'], 'gap': c['gap'], 'width': c['width'], 'hole_b': c['hole_b'],
                   'hole_c': c['c'][block], 'length': c['l'][block], 'thread': c['thread'],
                   'rail_w': RAILS[series]['rail_w'], 'rail_h': RAILS[series]['rail_h'],
                   'hole_depth': round(min(c['thread'] + 1, c['height'] - RAILS[series]['rail_h'] - 0.4), 2)}
         params = p.sizes(gid, preset, step, tuple(preset))
         hb, hc = f'{n("hole_b")} / 2', f'{n("hole_c")} / 2'
         holes = [p.circle([f'{sx}{hc}', f'{sy}{hb}'], n('thread')) for sx in ('', '-') for sy in ('', '-')]
+        cap_x = f'{n("length")} / 2 - {n("cap")} / 2'
+        caps = [p.rect([f'{sx}({cap_x})', 0], n('cap'), f'{n("width")} - 1 mm') for sx in ('', '-')]
+        nipple_z = f'({n("rail_h")} + {n("height")} - 0.4 mm) / 2'
         steps = [
-            p.sketch(n('sk'), [p.rect([0, 0], n('length'), n('width'))], offset=n('gap')),
+            p.sketch(n('sk'), [p.rect([0, 0], f'{n("length")} - 2 * {n("cap")}', n('width'))], offset=n('gap')),
             p.extrude(n('block'), n('sk'), f'{n("height")} - {n("gap")}', 'new_body'),
+            p.chamfer(n('block_edge'), '0.5 mm', {'feature': n('block'), 'faces': 'end'}),
+            p.sketch(n('cap_sk'), caps, offset=n('gap')),
+            p.extrude(n('caps'), n('cap_sk'), f'{n("height")} - {n("gap")} - 0.6 mm', 'join'),
             p.sketch(n('channel_sk'), [p.rect([0, 0], f'{n("length")} + 2 mm', f'{n("rail_w")} + 0.4 mm')],
                      offset=n('gap')),
             p.extrude(n('channel'), n('channel_sk'), f'{n("rail_h")} + 0.2 mm - {n("gap")}', 'cut'),
             p.sketch(n('hole_sk'), holes, offset=n('height')),
-            p.extrude(gid, n('hole_sk'), f'-{n("hole_depth")}', 'cut'),
+            p.extrude(n('holes'), n('hole_sk'), f'-{n("hole_depth")}', 'cut'),
+            p.sketch(n('nipple_sk'), [p.circle([0, nipple_z], '3 mm')], plane='yz', offset=f'{n("length")} / 2'),
+            p.extrude(gid, n('nipple_sk'), '3 mm', 'join'),
         ]
         return params, steps
 
