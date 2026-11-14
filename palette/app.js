@@ -415,6 +415,7 @@
       h('span', { class: 'result-text' }, h('b', { text: how }), meta.length ? ' · ' + meta.join(' · ') : ''),
       h('span', { class: 'result-actions' },
         v ? h('button', { class: 'mini-btn', title: isCurrent ? 'View or edit this design' : 'View this design', onclick: () => openSheet(t.version) }, icon(isCurrent ? 'code' : 'eye'), 'JSON') : null,
+        v ? h('button', { class: 'mini-btn', title: `Open Bill of Materials for v${t.version}`, onclick: () => send('open_bom', { n: t.version }) }, icon('table'), 'BOM') : null,
         v && !isCurrent ? h('button', { class: 'mini-btn', title: `Rebuild v${t.version} as the current version`, disabled: S.busy, onclick: () => send('restore_version', { n: t.version }) }, icon('restore'), 'Restore') : null));
   }
 
@@ -1444,6 +1445,21 @@
         copy({ text }) {
           (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(() => {});
           emit({ type: 'toast', text: 'Copied to clipboard' });
+        },
+        open_bom({ n }) {
+          const v = cur.versions.find((x) => x.n === n) || cur.versions.find((x) => x.n === cur.current);
+          const rows = v ? [
+            { category: 'Made', item: cur.title || 'Main part', qty: '1', unit: 'pcs', note: '6061 Aluminum', link: '', made: true },
+            { category: 'Fasteners', item: 'M4 x 12 socket head cap screw', qty: '4', unit: 'pcs', note: 'Stainless', link: 'https://example.com/m4', made: false },
+          ] : [];
+          const csv = 'Category,Item,Qty,Unit,Note,Link\n' + rows.map((r) => [r.category, r.item, r.qty, r.unit, r.note, r.link].join(',')).join('\n') + '\n';
+          try {
+            localStorage.setItem('vibeshaper_mock_bom', JSON.stringify({
+              type: 'bom', theme: general.theme, empty: !v, title: cur.title, version: v ? v.n : null,
+              is_current: Boolean(v && v.n === cur.current), rows, csv, buy_count: 1, make_count: 1,
+            }));
+          } catch (_) {}
+          window.open('bom.html?mock', 'VibeShaper_BOM', 'width=820,height=560,resizable=yes');
         },
       };
 

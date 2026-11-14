@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bill of Materials</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .bom-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .bom-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  .bom-title-wrap { min-width: 0; }
+  .bom-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .bom-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bom-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .bom-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; flex-wrap: wrap; }
+  #bom-seg { flex-shrink: 0; }
+  #bom-seg button { flex: 0 0 auto; padding: 0 12px; }
+  .bom-search { flex: 1; min-width: 180px; max-width: 320px; position: relative; display: flex; align-items: center; }
+  .bom-search svg { position: absolute; left: 9px; color: var(--text-3); pointer-events: none; }
+  .bom-search input { width: 100%; padding: 6px 10px 6px 28px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 12.5px; outline: none; }
+  .bom-search input:focus { border-color: var(--accent); }
+  .bom-scroll { flex: 1; overflow: auto; background: var(--bg); }
+  .bom-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .bom-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); background: var(--surface); border-bottom: 1px solid var(--border); padding: 9px 12px; white-space: nowrap; }
+  .bom-table thead th.num, .bom-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bom-table tbody td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .bom-table tbody tr:hover { background: var(--surface-2); }
+  .bom-item { font-weight: 500; }
+  .bom-note { color: var(--text-2); }
+  .bom-cat { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 500; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+  .bom-cat.made { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+  .bom-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; font-size: 10.5px; font-weight: 500; background: var(--surface-2); color: var(--text-2); }
+  .bom-badge.cur { background: var(--ok-soft); color: var(--ok); }
+  .bom-link { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .bom-link:hover { text-decoration: underline; }
+  .bom-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 24px; color: var(--text-2); gap: 8px; }
+  .bom-empty strong { color: var(--text); font-size: 14px; }
+  .bom-empty p { margin: 0; max-width: 420px; font-size: 12.5px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 10.5V3.5A1.5 1.5 0 0 1 4.5 2h6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2.5v7.5m0 0-3-3m3 3 3-3M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="bom-shell">
+  <header class="bom-head">
+    <div class="bom-title-wrap">
+      <div class="bom-title">
+        <span>Bill of Materials</span>
+        <span id="bom-badge" class="bom-badge" hidden></span>
+      </div>
+      <div id="bom-sub" class="bom-sub">Waiting for design…</div>
+    </div>
+    <div class="bom-actions">
+      <button id="btn-copy" class="btn ghost" type="button" disabled>
+        <svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>
+        Copy CSV
+      </button>
+      <button id="btn-save" class="btn primary" type="button" disabled>
+        <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
+        Save CSV…
+      </button>
+    </div>
+  </header>
+
+  <div class="bom-bar">
+    <div id="bom-seg" class="seg" role="group" aria-label="Filter items">
+      <button type="button" data-filter="all" aria-pressed="true">All (0)</button>
+      <button type="button" data-filter="buy" aria-pressed="false">To Buy (0)</button>
+      <button type="button" data-filter="make" aria-pressed="false">To Make (0)</button>
+    </div>
+    <div class="bom-search">
+      <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="bom-q" type="search" placeholder="Filter items, categories, notes…">
+    </div>
+  </div>
+
+  <main id="bom-scroll" class="bom-scroll"></main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const state = { payload: null, filter: 'all', query: '' };
+  let toastTimer = null;
+
+  function showToast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  }
+
+  function applyTheme(theme) {
+    if (theme === 'light' || theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', theme);
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }
+
+  function isMock() {
+    return typeof window.adsk === 'undefined' || !window.adsk.fusionSendData;
+  }
+
+  function send(action, payload) {
+    const data = JSON.stringify(payload || {});
+    if (!isMock()) {
+      return Promise.resolve(window.adsk.fusionSendData(action, data));
+    }
+    if (action === 'copy') {
+      const text = (payload && payload.text) || '';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard'), () => showToast('Could not copy'));
+      } else {
+        showToast('Copied to clipboard');
+      }
+    } else if (action === 'export_bom' && state.payload && state.payload.csv) {
+      const blob = new Blob(['\ufeff' + state.payload.csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `v${state.payload.version || 1}-bom.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast(`Saved ${a.download}`);
+    }
+    return Promise.resolve('');
+  }
+
+  function cell(cls, text) {
+    const td = document.createElement('td');
+    if (cls) td.className = cls;
+    td.textContent = text || '';
+    return td;
+  }
+
+  function renderEmpty(title, body) {
+    const box = document.createElement('div');
+    box.className = 'bom-empty';
+    const strong = document.createElement('strong');
+    strong.textContent = title;
+    const p = document.createElement('p');
+    p.textContent = body;
+    box.append(strong, p);
+    return box;
+  }
+
+  function render() {
+    const p = state.payload;
+    const scroll = $('bom-scroll');
+    const badge = $('bom-badge');
+    const sub = $('bom-sub');
+    const btnCopy = $('btn-copy');
+    const btnSave = $('btn-save');
+    scroll.textContent = '';
+
+    if (!p || p.empty) {
+      badge.hidden = true;
+      sub.textContent = (p && p.title) ? p.title : 'No built design in this chat yet';
+      btnCopy.disabled = true;
+      btnSave.disabled = true;
+      updateCounts(0, 0, 0);
+      scroll.append(renderEmpty('No Bill of Materials yet', 'Build a design first, then open BOM from any version card.'));
+      return;
+    }
+
+    const total = p.rows.length;
+    updateCounts(total, p.buy_count || 0, p.make_count || 0);
+    sub.textContent = `${p.title || 'Untitled'} · v${p.version} · ${total} line${total === 1 ? '' : 's'}`;
+    badge.hidden = false;
+    badge.className = 'bom-badge' + (p.is_current ? ' cur' : '');
+    badge.textContent = p.is_current ? 'current' : 'snapshot';
+    btnCopy.disabled = total === 0;
+    btnSave.disabled = total === 0;
+
+    if (total === 0) {
+      scroll.append(renderEmpty(
+        'No BOM items in this version',
+        'Add parts, materials, or explicit bom entries to your design to see purchased and fabricated items here.'
+      ));
+      return;
+    }
+
+    const q = state.query.trim().toLowerCase();
+    const filtered = p.rows.filter((r) => {
+      if (state.filter === 'buy' && r.made) return false;
+      if (state.filter === 'make' && !r.made) return false;
+      if (!q) return true;
+      return [r.category, r.item, r.unit, r.note, r.link].some((v) => String(v || '').toLowerCase().includes(q));
+    });
+
+    if (filtered.length === 0) {
+      scroll.append(renderEmpty('No matching rows', 'Try clearing the search box or switching the filter tab.'));
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'bom-table';
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const [label, cls] of [['Category', ''], ['Item', ''], ['Qty', 'num'], ['Unit', ''], ['Note', ''], ['Link', '']]) {
+      const th = document.createElement('th');
+      if (cls) th.className = cls;
+      th.textContent = label;
+      hr.append(th);
+    }
+    thead.append(hr);
+
+    const tbody = document.createElement('tbody');
+    for (const r of filtered) {
+      const tr = document.createElement('tr');
+
+      const tdCat = document.createElement('td');
+      const pill = document.createElement('span');
+      pill.className = 'bom-cat' + (r.made ? ' made' : '');
+      pill.textContent = r.category || '';
+      tdCat.append(pill);
+
+      const tdLink = document.createElement('td');
+      const link = String(r.link || '').trim();
+      if (/^https?:\/\//i.test(link)) {
+        const a = document.createElement('a');
+        a.className = 'bom-link';
+        a.href = link;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = link;
+        tdLink.append(a);
+      } else {
+        tdLink.textContent = link;
+      }
+
+      tr.append(
+        tdCat,
+        cell('bom-item', r.item),
+        cell('num', r.qty),
+        cell('', r.unit),
+        cell('bom-note', r.note),
+        tdLink
+      );
+      tbody.append(tr);
+    }
+    table.append(thead, tbody);
+    scroll.append(table);
+  }
+
+  function updateCounts(all, buy, make) {
+    const labels = { all: `All (${all})`, buy: `To Buy (${buy})`, make: `To Make (${make})` };
+    for (const btn of $('bom-seg').querySelectorAll('button')) {
+      btn.textContent = labels[btn.dataset.filter];
+      btn.setAttribute('aria-pressed', btn.dataset.filter === state.filter ? 'true' : 'false');
+    }
+  }
+
+  function onEvent(ev) {
+    if (!ev || ev.type !== 'bom') return;
+    applyTheme(ev.theme);
+    state.payload = ev;
+    render();
+  }
+
+  window.fusionJavaScriptHandler = {
+    handle(action, data) {
+      try {
+        if (action === 'event') onEvent(JSON.parse(data));
+      } catch (e) {
+        console.error('VibeShaper BOM event error', e);
+      }
+      return 'OK';
+    },
+  };
+
+  $('bom-seg').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-filter]');
+    if (!btn) return;
+    state.filter = btn.dataset.filter;
+    render();
+  });
+
+  $('bom-q').addEventListener('input', (e) => {
+    state.query = e.target.value || '';
+    render();
+  });
+
+  $('btn-copy').addEventListener('click', () => {
+    if (state.payload && state.payload.csv) send('copy', { text: state.payload.csv });
+  });
+
+  $('btn-save').addEventListener('click', () => {
+    if (state.payload && !state.payload.empty) send('export_bom', { n: state.payload.version });
+  });
+
+  function loadMock() {
+    try {
+      const raw = localStorage.getItem('vibeshaper_mock_bom');
+      if (raw) onEvent(JSON.parse(raw));
+    } catch (_) {}
+  }
+
+  if (isMock()) {
+    loadMock();
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'vibeshaper_mock_bom') loadMock();
+    });
+  } else {
+    send('bom_ready', {});
+  }
+})();
+</script>
+</body>
+</html>

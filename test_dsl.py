@@ -2555,6 +2555,9 @@ class _Harness:
     def __init__(self):
         self.events = queue.Queue()
         self.panel = []  # events sent to the palette
+        self.bom_panel = []  # events sent to the BOM palette
+        self.palettes = {}
+        self.save_dialog = SimpleNamespace(result=None, filename='')
         self.builds = 0
         self.progress_bar = []  # Fusion's status-bar progress: covers the docked panel, so never used
         self.addin = None
@@ -2574,8 +2577,33 @@ class _Harness:
             findEntityByToken = _FDesign.findEntityByToken
 
         class Palette(Stub):
+            def __init__(self, pid):
+                self.pid = pid
+                self.isVisible = True
+                self.dockingState = None
+                self.incomingFromHTML = SimpleNamespace(add=lambda fn: None)
+
             def sendInfoToHTML(self, action, data):
-                h.panel.append(json.loads(data))
+                target = h.bom_panel if self.pid == 'VibeShaper_BOM' else h.panel
+                target.append(json.loads(data))
+
+            def deleteMe(self):
+                h.palettes.pop(self.pid, None)
+
+        def _pal_item(pid):
+            if pid == 'VibeShaper_Palette':
+                return h.palettes.setdefault(pid, Palette(pid))
+            return h.palettes.get(pid)
+
+        def _pal_add(pid, *a):
+            p = Palette(pid)
+            h.palettes[pid] = p
+            return p
+
+        def _file_dialog():
+            dlg = SimpleNamespace(title='', filter='', initialFilename='', filename=h.save_dialog.filename)
+            dlg.showSave = lambda: (setattr(dlg, 'filename', h.save_dialog.filename), h.save_dialog.result)[1]
+            return dlg
 
         class CmdDef(Stub):
             def __init__(self, cid):
@@ -2585,9 +2613,10 @@ class _Harness:
                 h.run_build()
 
         class UI(Stub):
-            palettes = SimpleNamespace(itemById=lambda pid: Palette())
+            palettes = SimpleNamespace(itemById=_pal_item, add=_pal_add)
             progressBar = SimpleNamespace(showBusy=lambda *a: h.progress_bar.append(a), hide=lambda: None)
             commandDefinitions = SimpleNamespace(itemById=lambda cid: CmdDef(cid))
+            createFileDialog = staticmethod(_file_dialog)
 
         class App(Stub):
             userInterface = UI()
@@ -3609,5 +3638,67 @@ finally:
 H.act('send', text=json.dumps(_pre_dsl(60)))
 H.pump(H.idle)
 assert not e2e._busy() and H.last_ai()['status'] == 'done' and H.last_ai()['replaced'] == 1, H.last_ai()
+
+# 21. Floating BOM palette opens from a version, live-syncs on parameter/theme changes, exports CSV, and cleans up on stop
+_bom_dsl = {
+    'name': 'bom_bracket',
+    'parameters': {'qty_n': '4'},
+    'material': '6061 Aluminum',
+    'bom': [{'category': 'Fasteners', 'item': 'M4 screw', 'qty': 'qty_n', 'unit': 'pcs', 'note': 'Stainless', 'link': 'https://example.com/m4'}],
+    'timeline': [
+        {'op': 'sketch', 'id': 's', 'plane': 'xy',
+         'entities': [{'type': 'center_rectangle', 'center': [0, 0], 'width': '40 mm', 'height': '20 mm'}]},
+        {'op': 'extrude', 'sketch': 's', 'distance': '5 mm', 'mode': 'new_body'},
+    ],
+}
+H.act('new_chat')
+H.act('send', text=json.dumps(_bom_dsl))
+H.pump(H.idle)
+assert H.last_ai()['status'] == 'done' and H.last_ai()['version'] == 1
+H.bom_panel.clear()
+H.act('open_bom', n=1)
+assert 'VibeShaper_BOM' in H.palettes
+assert H.bom_panel and H.bom_panel[-1]['type'] == 'bom'
+_bev = H.bom_panel[-1]
+assert _bev['version'] == 1 and _bev['is_current'] is True
+assert _bev['buy_count'] == 1 and _bev['make_count'] == 1
+assert any(r['item'] == 'M4 screw' and r['qty'] == '4' and not r['made'] for r in _bev['rows'])
+assert 'M4 screw,4,pcs' in _bev['csv']
+
+H.act('set_param', name='qty_n', expr='8')
+assert any(r['item'] == 'M4 screw' and r['qty'] == '8' for r in H.bom_panel[-1]['rows'])
+
+_orig_theme = E2E_GENERAL.get('theme')
+try:
+    E2E_GENERAL['theme'] = 'dark'
+    H.act('save_general', values={'theme': 'dark'})
+    assert H.bom_panel[-1]['theme'] == 'dark'
+finally:
+    if _orig_theme is None:
+        E2E_GENERAL.pop('theme', None)
+    else:
+        E2E_GENERAL['theme'] = _orig_theme
+
+_saved_dr = getattr(e2e.adsk.core, 'DialogResults', None)
+try:
+    e2e.adsk.core.DialogResults = SimpleNamespace(DialogOK=1)
+    with tempfile.TemporaryDirectory() as _td:
+        _csv_out = pathlib.Path(_td) / 'out-bom.csv'
+        H.save_dialog.result = 1
+        H.save_dialog.filename = str(_csv_out)
+        H.act('export_bom', n=1)
+        assert _csv_out.exists()
+        _csv_txt = _csv_out.read_text(encoding='utf-8-sig')
+        assert 'M4 screw,8,pcs' in _csv_txt
+        assert {'type': 'toast', 'text': 'Saved out-bom.csv'} in H.panel[-2:]
+finally:
+    if _saved_dr is None:
+        delattr(e2e.adsk.core, 'DialogResults')
+    else:
+        e2e.adsk.core.DialogResults = _saved_dr
+
+assert e2e._bom_palette() is not None
+e2e._bom_palette().deleteMe()
+assert 'VibeShaper_BOM' not in H.palettes
 
 print('ok')

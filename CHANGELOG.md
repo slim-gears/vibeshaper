@@ -4,6 +4,11 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Added
+- **Floating Bill of Materials window.** Each built version card now has a `BOM` button that opens a wider floating palette (`palette/bom.html`) with `All` / `To Buy` / `To Make` filtering, search, live updates on parameter, build, chat, and theme changes, `Copy CSV`, and `Save CSV…`.
+
 ## [0.6.1]
 
 ### Fixed

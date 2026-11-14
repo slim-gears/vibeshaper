@@ -22,7 +22,7 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from . import chat, dsl, features, llm, providers, shapes, userdata
+from . import bom, chat, dsl, features, llm, providers, shapes, userdata
 from . import tools as toolbox
 
 def _reload_plugins(package):
@@ -55,6 +55,7 @@ def _reload_providers():
 _reload_plugins(features)  # before dsl, which reads the features when it loads
 _reload_plugins(shapes)  # before dsl, which reads the shapes when it loads
 importlib.reload(dsl)  # pick up edits on add-in Stop/Run without restarting Fusion
+importlib.reload(bom)
 importlib.reload(userdata)
 _reload_providers()
 _reload_plugins(toolbox)
@@ -81,11 +82,14 @@ HERE = pathlib.Path(__file__).parent
 SETTINGS = userdata.path('settings.json')  # outside the add-in folder: see userdata.py
 SETTINGS_VERSION = 1  # layout of settings.json; bump (and upgrade old files) when it changes
 PALETTE_HTML = HERE / 'palette' / 'index.html'
+BOM_PALETTE_ID = 'VibeShaper_BOM'
+BOM_HTML = HERE / 'palette' / 'bom.html'
 
 _handlers = []  # Fusion needs handler references kept alive
 _job = {}  # the one generation/build in flight (see _new_job)
 _job_ids = itertools.count(1)
 _ctx = {'store': None}  # chats of the active design
+_bom_target = {'chat_id': None, 'version_n': None}  # active BOM window target
 _models_cache = {}  # provider id -> last fetched models: [{id, label, images, thinking, tools}]
 _tool_waits = {}  # tool request key -> {'event', 'result'}: worker threads waiting on the main thread
 _tool_keys = itertools.count(1)
@@ -193,6 +197,13 @@ def _palette():
         return None
 
 
+def _bom_palette():
+    try:
+        return _app().userInterface.palettes.itemById(BOM_PALETTE_ID)
+    except Exception:
+        return None
+
+
 def _emit(ev):
     pal = _palette()
     if not pal:
@@ -201,6 +212,73 @@ def _emit(ev):
         pal.sendInfoToHTML('event', json.dumps(ev))
     except Exception as e:
         _log(f'VibeShaper: could not update panel: {e}')
+
+
+def _emit_bom(ev):
+    pal = _bom_palette()
+    if not pal:
+        return
+    try:
+        pal.sendInfoToHTML('event', json.dumps(ev))
+    except Exception as e:
+        _log(f'VibeShaper: could not update BOM panel: {e}')
+
+
+def _resolve_bom_target(chat_id=None, version_n=None):
+    store = _store()
+    c = (store.get(chat_id) if store and chat_id else None) or (store.active() if store else None)
+    v = None
+    if c:
+        v = c.version(version_n) if version_n is not None else c.current_version()
+        if v is None:
+            v = c.current_version()
+    return c, v
+
+
+def _bom_payload(c=None, version_n=None):
+    if c is None and version_n is None:
+        c, v = _resolve_bom_target(_bom_target.get('chat_id'), _bom_target.get('version_n'))
+    else:
+        v = (c.version(version_n) if version_n is not None else c.current_version()) if c else None
+        if c and v is None:
+            v = c.current_version()
+    theme = _general().get('theme', 'system')
+    if not c or not v:
+        return {
+            'type': 'bom', 'theme': theme, 'empty': True,
+            'title': c.title if c else '', 'version': None, 'is_current': False,
+            'rows': [], 'csv': '', 'buy_count': 0, 'make_count': 0,
+        }
+    rows = bom.collect(v['dsl'])
+    make_count = sum(1 for r in rows if r['Category'] == bom.MADE)
+    cur = c.current_version()
+    return {
+        'type': 'bom',
+        'theme': theme,
+        'empty': False,
+        'title': c.title,
+        'version': v['n'],
+        'is_current': bool(cur and cur['n'] == v['n']),
+        'rows': [{
+            'category': r['Category'],
+            'item': r['Item'],
+            'qty': bom._fmt_qty(r['Qty']),
+            'unit': r['Unit'],
+            'note': r['Note'],
+            'link': r['Link'],
+            'made': r['Category'] == bom.MADE,
+        } for r in rows],
+        'csv': bom.to_csv(rows),
+        'buy_count': len(rows) - make_count,
+        'make_count': make_count,
+    }
+
+
+def _refresh_bom(force=False):
+    pal = _bom_palette()
+    if not pal or (not force and getattr(pal, 'isVisible', False) is not True):
+        return
+    _emit_bom(_bom_payload())
 
 
 def _toast(text):
@@ -687,6 +765,10 @@ class _BuildExecute(adsk.core.CommandEventHandler):
         _finish_job()
         _save_store_later()
         _emit_chat(c)
+        if _bom_target.get('chat_id') in (None, c.id):
+            _bom_target['chat_id'] = c.id
+            _bom_target['version_n'] = v['n']
+            _refresh_bom()
 
 
 class _BuildFailed(adsk.core.CommandEventHandler):
@@ -937,6 +1019,8 @@ def _act_set_param(data):
     reply(True, c=c)
     if moves_parts:  # Fusion doesn't move a placed copy when a parameter changes; rebuild to move it
         _start_json_turn(c, c.add_assistant_turn('json'), json.loads(json.dumps(d)))
+    elif _bom_target.get('chat_id') in (None, c.id):
+        _refresh_bom()
 
 
 def _act_validate_json(data):
@@ -967,6 +1051,9 @@ def _act_switch_chat(data):
     c = store.switch(data.get('id'))
     _save_store()
     _emit_chat(c)
+    _bom_target['chat_id'] = c.id if c else None
+    _bom_target['version_n'] = None
+    _refresh_bom()
 
 
 def _act_delete_chat(data):
@@ -1049,10 +1136,41 @@ def _act_save_general(data):
     s = _load_settings()
     s['general'] = _clean_general(dict(data.get('values') or {}), s.get('general') or GENERAL_DEFAULTS)
     _save_settings(s)
+    _refresh_bom()
 
 
 def _act_copy(data):
     _toast('Copied to clipboard' if _copy_to_clipboard(str(data.get('text', ''))) else 'Could not copy')
+
+
+def _act_open_bom(data):
+    store = _store()
+    c = store.active() if store else None
+    _bom_target['chat_id'] = c.id if c else None
+    _bom_target['version_n'] = data.get('n')
+    _show_bom_palette()
+    _refresh_bom(force=True)
+
+
+def _act_bom_ready(_data):
+    _refresh_bom(force=True)
+
+
+def _act_export_bom(data):
+    c, v = _resolve_bom_target(_bom_target.get('chat_id'), data.get('n') if 'n' in data else _bom_target.get('version_n'))
+    if not c or not v:
+        return _toast('There is no built design to export')
+    csv_text = bom.to_csv(bom.collect(v['dsl']))
+    slug = ''.join(ch if ch.isalnum() or ch in '-_' else '-' for ch in (c.title or 'bom').lower()).strip('-') or 'bom'
+    ui = _app().userInterface
+    dlg = ui.createFileDialog()
+    dlg.title = 'Save Bill of Materials'
+    dlg.filter = 'CSV files (*.csv);;All files (*.*)'
+    dlg.initialFilename = f'{slug}-v{v["n"]}-bom.csv'
+    if dlg.showSave() == adsk.core.DialogResults.DialogOK and getattr(dlg, 'filename', ''):
+        out = pathlib.Path(dlg.filename)
+        out.write_text(csv_text, encoding='utf-8-sig')
+        _toast(f'Saved {out.name}')
 
 
 def _act_ready(_data):
@@ -1088,6 +1206,7 @@ ACTIONS = {
     'get_models': _act_get_models, 'select_model': _act_select_model,
     'save_provider': _act_save_provider, 'set_model_option': _act_set_model_option,
     'save_general': _act_save_general, 'copy': _act_copy,
+    'open_bom': _act_open_bom, 'bom_ready': _act_bom_ready, 'export_bom': _act_export_bom,
 }
 
 
@@ -1119,6 +1238,9 @@ class _DocumentActivated(adsk.core.DocumentEventHandler):
                 _act_stop({})
             _store(reload=True)
             _emit_state()
+            _bom_target['chat_id'] = None
+            _bom_target['version_n'] = None
+            _refresh_bom()
         except Exception:
             _log('VibeShaper: document switch error\n' + traceback.format_exc())
 
@@ -1136,6 +1258,25 @@ def _show_palette():
         pal = ui.palettes.add(PALETTE_ID, 'VibeShaper', url, True, True, True, 380, 720)
     try:
         pal.dockingState = adsk.core.PaletteDockingStates.PaletteDockStateRight
+    except Exception:
+        pass
+    _keep(_PaletteHTML(), pal.incomingFromHTML)
+    return pal
+
+
+def _show_bom_palette():
+    ui = _app().userInterface
+    pal = _bom_palette()
+    if pal:
+        pal.isVisible = True
+        return pal
+    url = str(BOM_HTML).replace('\\', '/')
+    try:
+        pal = ui.palettes.add(BOM_PALETTE_ID, 'Bill of Materials', url, True, True, True, 780, 520, True)
+    except Exception:
+        pal = ui.palettes.add(BOM_PALETTE_ID, 'Bill of Materials', url, True, True, True, 780, 520)
+    try:
+        pal.dockingState = adsk.core.PaletteDockingStates.PaletteDockStateFloating
     except Exception:
         pass
     _keep(_PaletteHTML(), pal.incomingFromHTML)
@@ -1205,6 +1346,11 @@ def stop(context):
         pal = _palette()
         if pal:
             pal.deleteMe()
+        bom_pal = _bom_palette()
+        if bom_pal:
+            bom_pal.deleteMe()
+        _bom_target['chat_id'] = None
+        _bom_target['version_n'] = None
         panel = ui.allToolbarPanels.itemById(PANEL_ID)
         ctrl = panel.controls.itemById(CMD_ID)
         if ctrl:
