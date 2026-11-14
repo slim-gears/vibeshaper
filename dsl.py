@@ -381,10 +381,26 @@ def _eval_count(v, um=None, params=None, default=5.0):
     return float(clean) if clean else default
 
 
+def _timeline_index(obj, default=-1):
+    """Timeline slot index of `obj`, or `default` when Fusion refuses (expanded group or collapsed child)."""
+    try:
+        return obj.index
+    except (AttributeError, RuntimeError):
+        return default
+
+
 def _group_end_index(g):
-    idx = getattr(g, 'index', -1)
-    for i in range(g.count):
-        idx = max(idx, getattr(g.item(i), 'index', -1))
+    idx = _timeline_index(g)
+    try:
+        count = g.count
+    except Exception:
+        count = 0
+    for i in range(count):
+        try:
+            it = g.item(i)
+        except Exception:
+            continue
+        idx = max(idx, _timeline_index(it))
     return idx
 
 
@@ -397,7 +413,11 @@ def find_groups(design, group_name):
     found = []
     for k in range(tl.timelineGroups.count):
         g = tl.timelineGroups.item(k)
-        if g.name == group_name or str(g.name).startswith(prefix):
+        try:
+            gname = g.name
+        except Exception:
+            continue
+        if gname == group_name or str(gname).startswith(prefix):
             pos = _group_end_index(g)
             found.append((pos if pos >= 0 else k, k, g))
     found.sort(key=lambda x: (x[0], x[1]))
@@ -427,10 +447,15 @@ def user_features_after(design, group_name):
         n = 0
         for k in range(tl.count):
             obj = tl.item(k)
-            if obj.isGroup or obj.index <= last_index:
+            idx = _timeline_index(obj)
+            if getattr(obj, 'isGroup', False) or idx <= last_index:
                 continue
-            parent = obj.parentGroup
-            if parent and str(parent.name).startswith('VibeShaper'):
+            try:
+                parent = obj.parentGroup
+                pname = str(parent.name) if parent else ''
+            except Exception:
+                pname = ''
+            if pname.startswith('VibeShaper'):
                 continue
             n += 1
         return n
@@ -572,8 +597,8 @@ def _delete_group_contents(design, g):
             return True
     except Exception:
         pass  # Fusion sometimes fails here ("InternalValidationError : res"); go item by item
-    items = [g.item(k) for k in range(g.count)]
     try:
+        items = [g.item(k) for k in range(g.count)]
         for it in reversed(items):  # newest first, so nothing still depends on what we delete
             ent = it.entity
             if ent is None or not ent.deleteMe():
@@ -606,10 +631,15 @@ def delete_version(design, group_name, param_names=(), occurrences=()):
             pass
         found = 'deleted'
         for g in reversed(groups):
-            if not getattr(g, 'isValid', True):
+            try:
+                if not getattr(g, 'isValid', True):
+                    continue
+                g_name = g.name
+            except Exception:
                 continue
             if not _delete_group_contents(design, g):
-                still = next((x for x in find_groups(design, group_name) if x.name == g.name), None)
+                still = next((x for x in find_groups(design, group_name)
+                              if getattr(x, 'name', None) == g_name), None)
                 if still:
                     try:
                         still.isSuppressed = True

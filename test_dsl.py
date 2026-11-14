@@ -3245,9 +3245,19 @@ class _SlotItem:
     def __init__(self, tag, timeline):
         self.tag, self._tl = tag, timeline
         self.isGroup, self.parentGroup = False, None
-        self.index = -1
+        self._index = -1
         self.refuse = False
         self.entity = SimpleNamespace(deleteMe=self._delete_entity)
+
+    @property
+    def index(self):
+        if self._index < 0:
+            raise RuntimeError('2 : InternalValidationError : res >= 0')
+        return self._index
+
+    @index.setter
+    def index(self, val):
+        self._index = val
 
     def _delete_entity(self):
         if self.refuse:
@@ -3265,10 +3275,20 @@ class _SlotGroup:
         self.name, self._items, self._tl = name, list(items), timeline
         self.isGroup, self.parentGroup = True, None
         self.isCollapsed, self.isSuppressed, self.refuse_delete = False, False, False
-        self.index = -1
+        self._index = -1
         for it in self._items:
             it.parentGroup = self
             it.index = -1
+
+    @property
+    def index(self):
+        if self._index < 0:
+            raise RuntimeError('2 : InternalValidationError : res >= 0')
+        return self._index
+
+    @index.setter
+    def index(self, val):
+        self._index = val
 
     count = property(lambda self: len(self._items))
 
@@ -3518,6 +3538,27 @@ try:
             _it.refuse = True
     assert dsl.delete_version(_fdes, 'VibeShaper · Lock · v1 [l1]', []) == 'suppressed'
     assert all(_g.isSuppressed for _g in dsl.find_groups(_fdes, 'VibeShaper · Lock · v1 [l1]'))
+
+    # Fusion raises RuntimeError ("InternalValidationError : res >= 0") on .index for expanded
+    # groups, collapsed children, or unreadable items; lookup and user_features_after stay safe.
+    _edes = _SlotDesign()
+    dsl.execute(_edes, {'parameters': {}, 'timeline': [
+        {'op': 'zz_step', 'id': 'a'}, {'op': 'zz_step', 'id': 'b'}]}, group_name='VibeShaper · Exp · v1 [e1]')
+    _eg = dsl.find_group(_edes, 'VibeShaper · Exp · v1 [e1]')
+    _edes.timeline.slots[:1] = list(_eg._items)
+    _edes.timeline._reindex()
+    _eg._index = -1
+    _bad_item = _edes.timeline.append_item(('unreadable', 0))
+    _edes.timeline.append_item(('user', 1))
+    _bad_item._index = -1
+    assert dsl.find_groups(_edes, 'VibeShaper · Exp · v1 [e1]') == [_eg]
+    assert dsl.find_group(_edes, 'VibeShaper · Exp · v1 [e1]') is _eg
+    assert dsl.user_features_after(_edes, 'VibeShaper · Exp · v1 [e1]') == 1
+
+    for _it in _eg._items:
+        _it._index = -1
+    assert dsl.find_groups(_edes, 'VibeShaper · Exp · v1 [e1]') == [_eg]
+    assert dsl.user_features_after(_edes, 'VibeShaper · Exp · v1 [e1]') == 0
 finally:
     _feat_reg.unregister_feature('zz_step')
     mock_core.Matrix3D = _saved_adsk['Matrix3D']
@@ -3528,5 +3569,45 @@ finally:
     else:
         mock_core.Point3D.create = _saved_adsk['Point3D_create']
     mock_fusion.FeatureOperations = _saved_adsk['FeatureOperations']
+
+# 20. Pre-build failures in _prepare_build clear _busy() and fail the turn without hanging on "Building..."
+def _pre_dsl(size):
+    return {'name': 'pre_box', 'parameters': {'pre_w': f'{size} mm'}, 'timeline': [
+        {'op': 'sketch', 'id': 's', 'plane': 'xy',
+         'entities': [{'type': 'center_rectangle', 'center': [0, 0], 'width': 'pre_w', 'height': 'pre_w'}]},
+        {'op': 'extrude', 'sketch': 's', 'distance': 'pre_w', 'mode': 'new_body'}]}
+
+
+H.act('new_chat')
+H.act('send', text=json.dumps(_pre_dsl(40)))
+H.pump(H.idle)
+assert H.last_ai()['status'] == 'done' and H.last_ai()['version'] == 1, H.last_ai()
+
+_real_find_group = e2e.dsl.find_group
+try:
+    def _boom_find_group(design, name):
+        raise RuntimeError('2 : InternalValidationError : res >= 0')
+
+    e2e.dsl.find_group = _boom_find_group
+    H.act('send', text=json.dumps(_pre_dsl(50)))
+    assert not e2e._busy()
+    _tj = H.last_ai()
+    assert _tj['status'] == 'error'
+    assert 'Could not prepare the build' in _tj['error'] and 'InternalValidationError' in _tj['error']
+    assert H.panel[-1].get('type') != 'toast'
+
+    SP.replies = [_pre_dsl(55)]
+    H.act('send', text='make it 55 mm')
+    H.pump(H.idle)
+    assert not e2e._busy()
+    _tm = H.last_ai()
+    assert _tm['status'] == 'error' and _tm['attempts'] == []
+    assert 'Could not prepare the build' in _tm['error'] and 'InternalValidationError' in _tm['error']
+finally:
+    e2e.dsl.find_group = _real_find_group
+
+H.act('send', text=json.dumps(_pre_dsl(60)))
+H.pump(H.idle)
+assert not e2e._busy() and H.last_ai()['status'] == 'done' and H.last_ai()['replaced'] == 1, H.last_ai()
 
 print('ok')

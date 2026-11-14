@@ -4,6 +4,9 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+### Fixed
+- **Updating a design in an existing chat no longer crashes or stays stuck on "Building…".** Timeline group lookup now handles Fusion's `InternalValidationError` on `.index` for expanded or collapsed groups, and errors before a build starts cleanly end the active job.
+
 ## [0.6.0]
 
 ### Added

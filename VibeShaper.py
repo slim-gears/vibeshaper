@@ -565,28 +565,32 @@ class _ModelsReady(adsk.core.CustomEventHandler):
 
 def _prepare_build(c, t, confirmed=False):
     """Decide whether the new design replaces the chat's current version, then build."""
-    design = _design()
-    prev = _live_version(c, design)
-    if prev and not confirmed:
-        n_after = dsl.user_features_after(design, prev['group_name'])
-        if n_after:
-            t['status'] = 'confirm'
-            t['confirm'] = {'count': n_after}
-            _save_store()
-            _emit_chat(c)
-            return
-    if _job.get('replace') is None:
-        _job['replace'] = prev is not None
-    t['status'] = 'building'
-    t.pop('confirm', None)
-    _emit({'type': 'stream', 'chat_id': c.id, 'turn_id': t['id'], 'status': 'building'})
+    try:
+        design = _design()
+        prev = _live_version(c, design)
+        if prev and not confirmed:
+            n_after = dsl.user_features_after(design, prev['group_name'])
+            if n_after:
+                t['status'] = 'confirm'
+                t['confirm'] = {'count': n_after}
+                _save_store()
+                _emit_chat(c)
+                return
+        if _job.get('replace') is None:
+            _job['replace'] = prev is not None
+        t['status'] = 'building'
+        t.pop('confirm', None)
+        _emit({'type': 'stream', 'chat_id': c.id, 'turn_id': t['id'], 'status': 'building'})
+    except Exception:
+        _handle_build_failure(traceback.format_exc(), heal=False, title='Could not prepare the build')
+        return
     try:
         cmd_def = _app().userInterface.commandDefinitions.itemById(BUILD_ID)
         if not cmd_def:
             raise RuntimeError(f"Command definition '{BUILD_ID}' not found")
         cmd_def.execute()
     except Exception:
-        _handle_build_failure(traceback.format_exc())
+        _handle_build_failure(traceback.format_exc(), heal=False)
 
 
 class _BuildCreated(adsk.core.CommandCreatedEventHandler):
