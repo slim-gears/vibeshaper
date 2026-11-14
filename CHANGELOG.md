@@ -4,6 +4,8 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.6.1]
+
 ### Fixed
 - **Updating a design in an existing chat no longer crashes or stays stuck on "Building…".** Timeline group lookup now handles Fusion's `InternalValidationError` on `.index` for expanded or collapsed groups, and errors before a build starts cleanly end the active job.
 
@@ -71,7 +73,8 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/slim-gears/vibeshaper/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/slim-gears/vibeshaper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/slim-gears/vibeshaper/compare/v0.3.0...v0.4.0
