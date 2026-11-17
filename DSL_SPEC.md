@@ -73,401 +73,314 @@ Sketches can be created on offset construction planes using `"offset"`:
 
 ---
 
+<!-- BEGIN AUTO-GENERATED PLUGINS -->
+<!-- Auto-generated from features/, features/entities/, and shapes/ plugins via dsl.sync_spec(). -->
+
 ## 4. Sketch Entities
 
-A sketch operation contains an array of `entities`.
+A sketch step contains a non-empty `entities` array. Every entity may include an optional `"id"` to be referenced by sketch constraints.
 
-### 4.1. Center Rectangle (`center_rectangle`)
-A rectangle centered symmetrically around a point. Automatically constrained and dimensioned.
-```json
-{
-  "type": "center_rectangle",
-  "center": [0, 0],
-  "width": "box_width",
-  "height": "box_length"
-}
+### 4.1. Center rectangle (`center_rectangle`)
+```text
+{"type": "center_rectangle", "center": [a, b], "width": along a, "height": along b}
 ```
-* **`center`**: `[x, y]` center coordinate.
-* **`width`**: dimension along the sketch's horizontal axis.
-* **`height`**: dimension along the sketch's vertical axis.
+* **Keys**: `type` *(required)*, `center` *(required)*, `width` *(required)*, `height` *(required)*, `id` *(optional)*
 
 ### 4.2. Circle (`circle`)
-A full circle with diameter constraint.
-```json
-{
-  "type": "circle",
-  "center": ["bolt_r", 0],
-  "diameter": "bolt_dia"
-}
+```text
+{"type": "circle", "center": [a, b], "diameter": d}
 ```
-* **`center`**: `[x, y]` center coordinate.
-* **`diameter`**: diameter expression or dimension.
+* **Keys**: `type` *(required)*, `center` *(required)*, `diameter` *(required)*, `id` *(optional)*
 
-### 4.3. Line (`line`)
-A straight line segment between two 2D points.
-```json
-{
-  "type": "line",
-  "start": [0, 0],
-  "end": ["flange_dia / 2", 0]
-}
+### 4.3. Polygon (`polygon`)
+```text
+{"type": "polygon", "points": [[a, b], ...], "closed": true}   at least 3 points
 ```
+* **Keys**: `type` *(required)*, `points` *(required)*, `closed` *(optional)*, `id` *(optional)*
 
-### 4.4. Polyline (`polyline`)
-A series of connected line segments. Used primarily as **sweep paths** or open spines.
-```json
-{
-  "type": "polyline",
-  "points": [
-    [0, "pipe_len"],
-    [0, 0],
-    ["pipe_len", 0]
-  ],
-  "closed": false
-}
+### 4.4. Line (`line`)
+```text
+{"type": "line", "start": [a, b], "end": [c, d]}
 ```
-* **`points`**: Array of at least two `[x, y]` points.
-* **`closed`**: Boolean (`false` for open paths, `true` if closed).
+* **Keys**: `type` *(required)*, `start` *(required)*, `end` *(required)*, `id` *(optional)*
 
-### 4.5. Polygon (`polygon`)
-A closed planar polygon (e.g. triangles, brackets, gusset ribs).
-```json
-{
-  "type": "polygon",
-  "points": [
-    [0, "pipe_len - flange_thick - 5 mm"],
-    [0, 0],
-    ["pipe_len - 5 mm", 0]
-  ],
-  "closed": true
-}
+### 4.5. Polyline (`polyline`)
+```text
+{"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires
 ```
-* **`points`**: Array of at least three `[x, y]` points.
-* **`closed`**: Defaults to `true`. Connects the last point back to the first point.
+* **Keys**: `type` *(required)*, `points` *(required)*, `closed` *(optional)*, `id` *(optional)*
 
-### 4.6. Regular Polygon (`regular_polygon`)
-A regular polygon (e.g. a hex nut recess), built like Fusion's own polygon tool: corners on a construction circle, equal sides, the bottom side horizontal.
-```json
-{
-  "type": "regular_polygon",
-  "center": ["bolt_x", "bolt_y"],
-  "sides": 6,
-  "across_flats": "nut_af"
-}
+### 4.6. Spline (`spline`)
+```text
+{"type": "spline", "points": [[a, b], ...], "closed": false}   smooth fitted spline curve through points (periodic loop when "closed": true)
 ```
-* **`center`**: `[x, y]` center coordinate.
-* **`sides`**: Whole number from 3 to 64.
-* **`across_flats`** or **`diameter`** *(exactly one)*: Distance between opposite flats, or the diameter of the circle through the corners.
+* **Keys**: `type` *(required)*, `points` *(required)*, `closed` *(optional)*, `id` *(optional)*
 
-### 4.7. Profile (`profile`)
-A closed outline of straight and arc segments, end to end (a slot, a rounded tab, a gear tooth).
-```json
-{
-  "type": "profile",
-  "start": [0, 0],
-  "segments": [
-    {"to": ["slot_len", 0]},
-    {"to": ["slot_len", "slot_w"], "through": ["slot_len + slot_w / 2", "slot_w / 2"]},
-    {"to": [0, "slot_w"]},
-    {"to": [0, 0], "through": ["-slot_w / 2", "slot_w / 2"]}
-  ]
-}
+### 4.7. Regular polygon (`regular_polygon`)
+```text
+{"type": "regular_polygon", "center": [a, b], "sides": n, "across_flats": d}   or "diameter" (through the corners) instead of across_flats; e.g. hex nut recesses
 ```
-* **`start`**: `[x, y]` of the first corner.
-* **`segments`**: Each goes from the previous corner `"to"` the next. With `"through"` it is a circular arc through that point; without, a straight line.
-* **`closed`** *(optional)*: Defaults to `true`. If the last segment doesn't end at `start`, a straight line closes the outline.
+* **Keys**: `type` *(required)*, `center` *(required)*, `sides` *(required)*, `diameter` *(optional)*, `across_flats` *(optional)*, `id` *(optional)*
 
-### 4.8. Mirror (`mirror`)
-Copies earlier entities of the same sketch across a line, like Fusion's sketch Mirror. Each copy is tied to its original by symmetry constraints about a construction line, so it follows every parameter change.
-```json
-{"type": "profile", "id": "right", "closed": false, "start": [0, 0], "segments": [
-  {"to": ["w / 2", 0]}, {"to": ["w / 2", "h"]}, {"to": [0, "h"]}]},
-{"type": "mirror", "id": "both", "entities": ["right"], "line": [[0, 0], [0, "h"]]}
+### 4.8. Profile (`profile`)
+```text
+{"type": "profile", "start": [a, b], "segments": [{"to": [c, d]}, {"to": [e, f], "through": [mx, my]}, {"to": [g, h], "spline": [[p1x, p1y], ...]}], "closed": true}   outline of lines, 3-point arcs ("through"), and fitted splines ("spline": intermediate fit points)
 ```
-* **`entities`**: IDs of entities defined earlier in the sketch. A mirror's own `id` names the originals plus the copies, so mirroring it again doubles everything (draw 1/4 of a symmetric outline, mirror it twice).
-* **`line`**: Two points `[[x1, y1], [x2, y2]]` on the mirror line.
-* Points on the line are shared with the copy, so an open chain that starts and ends on the line becomes one closed outline. A curve that is its own mirror image (a circle centered on the line) isn't copied.
+* **Keys**: `type` *(required)*, `start` *(required)*, `closed` *(optional)*, `segments` *(required)*, `id` *(optional)*
 
 ---
 
 ## 5. Timeline Operations
 
-The `timeline` is an array of objects. Each step must have an `"op"` field specifying one of the 12 supported operations.
+The `timeline` is an ordered array of step objects. Each step specifies `"op"` from the 13 core operations below or the shape plugins in Section 5.14.
 
-### 5.1. `sketch`
-Creates a planar sketch containing 2D geometric entities.
-```json
-{
-  "op": "sketch",
-  "id": "bracket_sk",
-  "plane": "xy",
-  "offset": "0 mm",
-  "entities": [
-    {"type": "line", "id": "arm1", "start": [0, 0], "end": ["arm_len", 0]},
-    {"type": "line", "id": "arm2", "start": ["arm_len", 0], "end": ["arm_len", "leg_len"]},
-    {"type": "circle", "id": "hole", "center": [0, 0], "diameter": "hole_dia"}
-  ],
-  "constraints": [
-    {"type": "perpendicular", "entities": ["arm1", "arm2"]},
-    {"type": "equal", "entities": ["arm1", "arm2"]}
-  ]
-}
+### 5.1. `sketch` (Sketch)
+```text
+Sketch:
+   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz", "offset": length (optional), "entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal"|"coincident", "entities": [id1, id2]}, {"type": "midpoint", "point": pt_id, "entity": line_id}, {"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}
 ```
-* **`id`** *(required string)*: Unique identifier used by subsequent 3D operations.
-* **`plane`** *(required string)*: `"xy"`, `"xz"`, or `"yz"`.
-* **`offset`** *(optional length)*: Distance along the plane's normal vector. Defaults to `0`.
-* **`entities`** *(required array)*: Non-empty list of sketch entities. Any entity can have an optional `"id"` to be referenced by constraints.
-* **`constraints`** *(optional array)*: Explicit geometric constraints between sketch entities.
-  - `{"type": "perpendicular", "entities": ["l1", "l2"]}`: Right angle between two lines.
-  - `{"type": "parallel", "entities": ["l1", "l2"]}`: Parallel orientation.
-  - `{"type": "concentric", "entities": ["c1", "c2"]}`: Shared center between circles/arcs.
-  - `{"type": "tangent", "entities": ["l1", "arc1"]}`: Tangent transition.
-  - `{"type": "equal", "entities": ["e1", "e2"]}`: Equal lengths or diameters.
-  - `{"type": "coincident", "entities": ["p1", "p2"]}`: Coincident points.
-  - `{"type": "midpoint", "point": "p1", "entity": "l1"}`: Point constrained to curve midpoint.
-  - `{"type": "symmetry", "entities": ["l1", "l2"], "symmetry_line": "centerline"}`: Symmetry across a line.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `plane`, `offset`, `entities`, `constraints`
 
-> **Note on Constraint Automation**: Sketches are constrained the way a person would do it, and geometry is never fixed, so changing a parameter later moves it. Rectangles get horizontal/vertical sides, a center on a construction diagonal and width/height dimensions. Axis-aligned segments of lines, polylines and polygons get horizontal/vertical constraints and a length dimension; any coordinate still free gets a distance from the origin (or alignment with it when it is 0). Explicit `constraints` are optional; use them for intent the coordinates don't show, such as angled features.
-
-### 5.2. `extrude`
-Extrudes all closed profiles in the sketch along the sketch normal.
-```json
-{
-  "op": "extrude",
-  "id": "flange_body",
-  "sketch": "flange_sk",
-  "distance": "flange_thick",
-  "mode": "new_body"
-}
+### 5.2. `extrude` (Extrude)
+```text
+Extrude:
+   {"op": "extrude", "id": optional_name, "sketch": sketch_id, "distance": length, "mode": "new_body"|"join"|"cut"|"intersect"}
 ```
-* **`sketch`** *(required string)*: ID of a sketch defined earlier.
-* **`distance`** *(required length)*: Extrusion depth. Positive follows plane normal; negative goes opposite.
-* **`mode`** *(optional string)*: `"new_body"` (default), `"join"`, `"cut"`, or `"intersect"`.
-* **`id`** *(optional string)*: Identifier to reference this feature later (for patterns, threads, or mirrors).
+* **Step keys**: `op`, `id` *(optional unless required above)*, `sketch`, `distance`, `mode`
+- An extrude or revolve uses EVERY closed region of its sketch. Never draw a shape inside another shape in the same sketch.
 
-### 5.3. `revolve`
-Revolves sketch profiles around a coordinate axis.
-```json
-{
-  "op": "revolve",
-  "id": "pulley_body",
-  "sketch": "profile_sk",
-  "axis": "z",
-  "angle": "360 deg",
-  "mode": "new_body"
-}
+### 5.3. `revolve` (Revolve)
+```text
+Revolve:
+   {"op": "revolve", "id": optional_name, "sketch": sketch_id, "axis": "x"|"y"|"z", "angle": "360 deg" (optional), "mode": "new_body"|"join"|"cut"}
 ```
-* **`sketch`** *(required string)*: Sketch ID containing closed profile(s).
-* **`axis`** *(optional string)*: `"x"`, `"y"`, or `"z"` (defaults to `"z"`).
-* **`angle`** *(optional angle)*: Revolution sweep angle. Defaults to `"360 deg"`.
-* **`mode`** *(optional string)*: `"new_body"`, `"join"`, or `"cut"`.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `sketch`, `axis`, `angle`, `mode`
 
-### 5.4. `sweep`
-Sweeps a 2D profile sketch along a 3D path sketch.
-```json
-{
-  "op": "sweep",
-  "id": "pipe_body",
-  "sketch": "pipe_profile_sk",
-  "path": "pipe_path_sk",
-  "mode": "new_body"
-}
+### 5.4. `fillet` (Fillet)
+```text
+Fillet (ONLY uses radius and edges! NEVER put thickness or remove_faces here!):
+   {"op": "fillet", "radius": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
 ```
-* **`sketch`** *(required string)*: Sketch containing the closed cross-section profile.
-* **`path`** *(required string)*: Sketch containing the guide curve/polyline.
-* **`mode`** *(optional string)*: `"new_body"`, `"join"`, or `"cut"`.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `radius`, `edges`, `target`
+- For rounded corners or chamfered rims, use `fillet` or `chamfer` with edge selectors (`"vertical"`, `"top"`, `"circular"`).
 
-### 5.5. `fillet`
-Rounds sharp edges of a solid body.
-```json
-{
-  "op": "fillet",
-  "radius": "corner_r",
-  "edges": "vertical",
-  "target": "outer_body"
-}
+### 5.5. `chamfer` (Chamfer)
+```text
+Chamfer (ONLY uses distance and edges!):
+   {"op": "chamfer", "distance": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}
+   edge_object picks edges made by an earlier step: {"feature": step_id, "faces": "all"|"side"|"start"|"end" (optional), "exclude": step_id or [ids] (optional, drops edges touching those steps' faces), "on": sketch_id (optional, only edges in that sketch's plane), "type": "circle"|"line" (optional), "at": "top"|"bottom" (optional, highest/lowest Z), "direction": "x"|"y"|"z" (optional, line edge axis)}.
+   Prefer it over the broad words when only some edges should change, e.g. {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}.
 ```
-* **`radius`** *(required length)*: Fillet radius expression.
-* **`edges`** *(optional string or object)*: Edge selector filter:
-  * `"vertical"`: Edges parallel to the Z axis.
-  * `"top"`: Edges situated at the maximum Z extent.
-  * `"bottom"`: Edges situated at the minimum Z extent.
-  * `"circular"`: All circular/arc edges (e.g. rims of cylinders).
-  * `"all"`: All edges of the body.
-  * An object picks edges by the step that made them, and can narrow them down:
-    * `"feature"`: ID of an earlier step; only edges of the faces it made (as they are now, after later steps).
-    * `"faces"`: `"all"` (default), `"side"`, `"start"` or `"end"` faces of that step (for an extrude, `"side"` is a hole's bore).
-    * `"exclude"`: ID (or list of IDs) of steps whose faces the edge must not touch.
-    * `"on"`: ID of an earlier sketch; only edges lying in that sketch's plane (the rims where a hole meets the face it was sketched on).
-    * `"type"` (`"circle"` or `"line"`), `"at"` (`"top"` or `"bottom"`) and `"direction"` (`"x"`, `"y"`, `"z"`) filter further.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `distance`, `edges`, `target`
 
-    Chamfer only the outside rims of screw holes, not the rims inside a pocket:
-    ```json
-    {"op": "chamfer", "distance": "1.5 mm",
-     "edges": {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}}
-    ```
-* **`target`** *(optional string)*: Target body name or feature ID. Defaults to the active body.
-
-> [!WARNING]
-> Never put `thickness` or `remove_faces` in a `fillet` step! Shell and Fillet are strictly separate operations.
-
-### 5.6. `chamfer`
-Bevels edges of a solid body by a uniform distance.
-```json
-{
-  "op": "chamfer",
-  "distance": "1.5 mm",
-  "edges": "circular",
-  "target": "boss_body"
-}
+### 5.6. `shell` (Shell)
+```text
+Shell (ONLY uses thickness and remove_faces! NEVER put radius or edges here!):
+   {"op": "shell", "thickness": length, "remove_faces": "top"|"bottom"|"none"}
 ```
-* **`distance`** *(required length)*: Chamfer setback distance.
-* **`edges`** *(optional)*: Same selectors as `fillet`, including the object form that picks edges by feature.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `thickness`, `remove_faces`, `target`
+- For hollow boxes or open containers, prefer `shell` with `remove_faces: "top"` over manual pocket cuts!
+- When making an open box with rounded corners: FIRST `extrude`, NEXT `fillet` the vertical corners, THEN `shell` the top face (or shell first, then fillet). They are two distinct steps!
 
-### 5.7. `shell`
-Hollows out a solid body leaving walls of specified thickness, optionally removing open faces.
-```json
-{
-  "op": "shell",
-  "thickness": "wall_thick",
-  "remove_faces": "top"
-}
+### 5.7. `circular_pattern` (Circular pattern)
+```text
+Circular Pattern:
+   {"op": "circular_pattern", "feature": feature_id (optional), "axis": "z", "center": [a, b] (optional, default [0, 0]), "quantity": count, "angle": "360 deg"}
+   The axis passes through "center" ([x, y] for "z", [y, z] for "x", [x, z] for "y"). Set it whenever the patterned part is not centered on the origin.
 ```
-* **`thickness`** *(required length)*: Wall thickness.
-* **`remove_faces`** *(optional string)*: Which face to open up:
-  * `"top"`: Removes the highest planar face pointing in $+Z$ (creates an open container/box).
-  * `"bottom"`: Removes the lowest planar face pointing in $-Z$.
-  * `"none"`: Creates a completely hollow enclosed void inside the body.
-  * `"all"`: Removes all matching planar faces.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `feature`, `axis`, `center`, `quantity`, `angle`
+- For radial arrays (e.g. 6 bolt holes on a flange), draw ONE hole and use `circular_pattern`!
 
-### 5.8. `circular_pattern`
-Replicates a feature or body circularly around an axis.
-```json
-{
-  "op": "circular_pattern",
-  "feature": "bolt_cut",
-  "axis": "z",
-  "quantity": "bolt_qty",
-  "angle": "360 deg"
-}
+### 5.8. `linear_pattern` (Linear pattern)
+```text
+Linear Pattern:
+   {"op": "linear_pattern", "feature": feature_id (optional), "direction": "x"|"y"|"z", "distance": spacing, "quantity": count,
+    "direction2": another axis, "distance2": spacing, "quantity2": count (optional, all three for a grid)}
 ```
-* **`feature`** *(optional string)*: Feature ID to duplicate. Defaults to the immediately preceding feature.
-* **`axis`** *(optional string)*: `"x"`, `"y"`, or `"z"` (defaults to `"z"`).
-* **`center`** *(optional point)*: Where the axis passes through, in the coordinates of the plane normal to it: `[x, y]` for `"z"`, `[y, z]` for `"x"`, `[x, z]` for `"y"`. Defaults to the origin. Use it for anything not centered on the origin, such as the second gear of a pair: `"center": ["center_dist", 0]`.
-* **`quantity`** *(required)*: Number of instances including the original (must evaluate to a unitless integer $\ge 2$).
-* **`angle`** *(optional angle)*: Total span angle. Defaults to `"360 deg"`.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `feature`, `direction`, `distance`, `quantity`, `direction2`, `distance2`, `quantity2`
 
-### 5.9. `linear_pattern`
-Replicates a feature along a linear coordinate axis with specified spacing.
-```json
-{
-  "op": "linear_pattern",
-  "feature": "fin_extrude",
-  "direction": "x",
-  "distance": "fin_pitch",
-  "quantity": "fin_count"
-}
+### 5.9. `thread` (Thread)
+```text
+Thread:
+   {"op": "thread", "feature": feature_id (optional), "target": "internal"|"external"|"all" (optional), "modeled": true|false (optional, default true), "designation": "M6x1" (optional)}
 ```
-* **`feature`** *(optional string)*: Feature ID to replicate.
-* **`direction`** *(optional string)*: `"x"`, `"y"`, or `"z"` (defaults to `"x"`).
-* **`distance`** *(required length)*: Step spacing between instances.
-* **`quantity`** *(required)*: Total instance count.
-* **`direction2`**, **`quantity2`**, **`distance2`** *(optional)*: A second direction (another axis), its count and spacing, for a grid of copies. Give all three.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `feature`, `target`, `modeled`, `designation`, `thread_class`, `diameter`
+- To thread a hole, bore, or bolt, add a `thread` step specifying the cut feature: `{"op": "thread", "feature": "bore_cut", "target": "internal", "designation": "M20x2.5"}`. Physical 3D threads are modeled by default (`modeled: true`).
 
-### 5.10. `thread`
-Applies real modeled 3D threads or cosmetic threads to cylindrical faces (holes or shafts).
-```json
-{
-  "op": "thread",
-  "feature": "port_cut",
-  "target": "internal",
-  "designation": "M20x2.5",
-  "modeled": true
-}
+### 5.10. `mirror` (Mirror)
+```text
+Mirror:
+   {"op": "mirror", "feature": feature_id (optional), "target": body_or_feature_id (optional), "plane": "xy"|"xz"|"yz"|"top"|"bottom", "offset": length (optional), "combine": true|false (optional, default true)}
 ```
-* **`feature`** *(optional string)*: Feature ID producing the cylindrical face (e.g., hole cut or shaft extrude).
-* **`target`** *(optional string)*: `"internal"` (holes/bores), `"external"` (shafts/bolts), or `"all"`. Defaults to `"all"`.
-* **`designation`** *(optional string)*: Metric designation (e.g. `"M6x1"`, `"M20x2.5"`). Must match the physical diameter of the hole/boss.
-* **`modeled`** *(optional boolean)*: `true` generates physical 3D helical geometry (default); `false` generates a cosmetic texture.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `feature`, `plane`, `offset`, `combine`, `target`
+- For symmetric designs, model ONE half and use `mirror` across "xz" or "yz" with `combine: true` to complete the full symmetric body!
 
-### 5.11. `mirror`
-Mirrors a feature or body across a symmetry plane.
-```json
-{
-  "op": "mirror",
-  "feature": "gusset_body",
-  "plane": "xz",
-  "combine": true
-}
+### 5.11. `combine` (Combine)
+```text
+Combine (Boolean):
+   {"op": "combine", "target": body_or_feature_id (optional), "tools": [tool_id, ...], "mode": "cut"|"join"|"intersect", "keep_tools": false}
 ```
-* **`feature`** *(optional string)*: Feature ID to mirror. If omitted, mirrors the main body.
-* **`plane`** *(optional string)*: Symmetry plane (`"xy"`, `"xz"`, `"yz"`, or a face selector).
-* **`combine`** *(optional boolean)*: When mirroring a body, `true` joins the mirrored half into a single solid body.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `target`, `tools`, `mode`, `keep_tools`
+- To carve or combine separate bodies, use `combine` with `mode: "cut"` / `"join"` and list tool body IDs in `tools`.
 
-### 5.12. `combine` (Boolean Operation)
-Executes Boolean Join, Cut, or Intersect between solid bodies.
-```json
-{
-  "op": "combine",
-  "target": "main_body",
-  "tools": ["cutter_body"],
-  "mode": "cut",
-  "keep_tools": false
-}
+### 5.12. `sweep` (Sweep)
+```text
+Sweep:
+   {"op": "sweep", "sketch": profile_sketch_id, "path": path_sketch_id, "mode": "new_body"|"join"|"cut"}
 ```
-* **`target`** *(optional string)*: Target body name or feature ID.
-* **`tools`** *(required array or string)*: Tool body name(s) or feature ID(s) acting on the target.
-* **`mode`** *(optional string)*: `"cut"`, `"join"`, or `"intersect"`. Defaults to `"join"`.
-* **`keep_tools`** *(optional boolean)*: Whether to preserve tool bodies after operation (`false` by default).
+* **Step keys**: `op`, `id` *(optional unless required above)*, `sketch`, `path`, `mode`
+- For bent pipes, tubing, wire routing, or rails, draw a cross-section `sketch` and a spine/route `path` sketch, then use `sweep`.
+- For hollow pipes or conduit: to ensure fluid can pass through, FIRST sweep the outer pipe body (`mode: "new_body"`), THEN sweep an inner bore circle with a smaller diameter along the path (`mode: "cut"`) so the pipe is hollow and has a through-bore from end to end.
+- When modeling a gusset rib against a round pipe or cylinder: rib sketch points MUST extend into the body centerline (e.g. at [0, 0] or into the wall), NOT stop on the outer radius. Because round cylinders curve away from the offset sketch plane, stopping at the outer radius causes floating gaps!
 
-### 5.13. `coil` (Spring / Helix)
-Generates a parametric 3D helical coil, compression/extension spring, or spiral wire body.
-```json
-{
-  "op": "coil",
-  "id": "main_spring",
-  "axis": "z",
-  "center": [0, 0, 0],
-  "diameter": "coil_dia",
-  "section_size": "wire_dia",
-  "pitch": "coil_pitch",
-  "revolutions": "coil_turns",
-  "section": "circle",
-  "clockwise": true,
-  "mode": "new_body"
-}
+### 5.13. `coil` (Coil)
+```text
+Coil (Spring / Helix):
+   {"op": "coil", "diameter": coil_dia, "pitch": pitch, "revolutions": count, "height": length (optional; any 2 of pitch, revolutions, height), "section_size": wire_dia, "section": "circle"|"square" (optional, default "circle"), "center": [x, y, z] (optional, default [0, 0, 0]), "clockwise": true|false (optional, default true), "axis": "z"|"x"|"y" (optional, default "z"), "mode": "new_body"|"join"|"cut" (optional, default "new_body")}
 ```
-* **`diameter`** *(required length)*: Major/outer cylinder diameter of the coil helix. (Also accepts `"radius"`).
-* **`section_size`** *(required length)*: Cross-section diameter / thickness of the wire. (Also accepts `"wire_dia"`).
-* **`pitch`** *(optional length)*: Axial distance per turn (e.g. `"8 mm"`).
-* **`revolutions`** *(optional count)*: Number of coil turns (e.g. `6` or `"6"`).
-* **`height`** *(optional length)*: Total axial height of the coil.
-  *(Any combination of `pitch`, `revolutions`, and `height` is automatically resolved: $H = \text{revolutions} \times \text{pitch}$).*
-* **`axis`** *(optional string)*: Central axis of the helix (`"z"`, `"x"`, or `"y"`, default `"z"`).
-* **`center`** *(optional point)*: Center origin coordinates `[x, y]` or `[x, y, z]` (defaults to `[0, 0, 0]`).
-* **`diameter2`** *(optional length)*: End diameter at the top of the coil for conical/tapered springs.
-* **`section`** *(optional string)*: Cross-section shape: `"circle"` (default) or `"square"`.
-* **`clockwise`** *(optional boolean)*: `true` for standard right-hand helix (default), `false` for left-hand.
-* **`mode`** *(optional string)*: `"new_body"` (default), `"join"`, `"cut"`, or `"intersect"`.
+* **Step keys**: `op`, `id` *(optional unless required above)*, `diameter`, `pitch`, `revolutions`, `section_size`, `section`, `axis`, `center`, `mode`, `clockwise`
+- For springs, coils, or screw helices, use `coil` with `diameter` (major coil diameter), `section_size` (wire diameter), and `pitch` / `revolutions` (or `height`).
 
 ### 5.14. Shapes (plugin steps)
-Ready-made parts, such as a spur gear, are plugins in the `shapes/` folder. Each adds its own step type (`"op"`), described to the model in the system prompt. VibeShaper turns such a step into ordinary parameters and steps before validating and building, so the timeline holds plain sketches, extrudes and patterns.
+Ready-made parametric parts and features in `shapes/`. Each expands into ordinary parameters and timeline steps before validation and build, prefixed by its required `"id"` (`<id>_...`). Every preset dimension can be overridden.
 
-* **`id`** *(required)*: Names the finished part, so later steps can refer to it (for example in an edge selector). The parameters and steps a shape adds start with this id (`gear2_pitch_r`, `gear2_tooth_sk`...).
-* The available shapes and their keys are listed in each plugin's `prompt` (see `shapes/`):
-  * `spur_gear`: an involute spur gear.
-  * `bolt_hole`: clearance holes for metric bolts (M2 to M12), with an optional counterbore, countersink or hex nut trap, sized from ISO tables.
-  * `vent_grid`: round, hexagonal (honeycomb) or slot vent holes filling a rectangle; the hole count follows the area.
-  * `tslot_profile`: an aluminum T-slot extrusion (2020, 2040, 3030, 4040...) with the real section: rounded corner blocks with lips, a core and bore in each cell, diagonal spars, T-shaped slots and hollows between cells.
-  * Bought parts, each modeled around its own origin with its mounting holes, to design the parts that hold it:
-    * `nema_motor`: a NEMA 14, 17 or 23 stepper motor.
-    * `linear_rail` and `rail_carriage`: an MGN7, MGN9, MGN12 or MGN15 miniature linear guide rail cut to length, and its H or C carriage.
-    * `lead_screw` and `lead_nut`: a T8 trapezoidal lead screw and its flanged (optionally anti-backlash) nut.
-    * `pillow_block`: a KP08 pillow block bearing.
-    * `shaft_coupler`: a flexible shaft coupler.
-    * `spindle`: a DC milling spindle with an ER collet nose.
+#### `spur_gear` — Spur gear
+```text
+{"op": "spur_gear", "id": name, "module": length, "teeth": count, "thickness": length,
+ "center": [a, b] (optional, default [0, 0]), "plane": "xy"|"xz"|"yz" (optional, default "xy"), "offset": length (optional),
+ "pressure_angle": angle (optional, default "20 deg"), "rotate": angle (optional), "bore": diameter (optional),
+ "mode": "new_body"|"join" (optional)}
+  An involute spur gear in one step; its pitch diameter is module * teeth. The step's "id" names the finished gear.
+  Gears that mesh share module and pressure angle; their centers are module * (teeth1 + teeth2) / 2 apart.
+  A gear at the origin has a tooth pointing along +a. For a second gear placed along +a, set "rotate": "180 deg / teeth2"
+  when teeth2 is even (so a gap faces the first gear's tooth); leave rotate out when teeth2 is odd.
+  Example: {"op": "spur_gear", "id": "gear2", "module": "gear_module", "teeth": "gear2_teeth", "thickness": "gear_thick",
+   "center": ["gear_module * (gear1_teeth + gear2_teeth) / 2", 0], "bore": "8 mm"}
+```
+* **Step keys**: `op`, `id` *(required)*, `module`, `teeth`, `thickness`, `pressure_angle`, `rotate`, `bore`
 
-  Sizes come from the usual catalog tables. Sellers differ, so check them against the parts you receive; every size is a parameter (`<id>_pitch`, `<id>_hole`...) that can be overridden.
+#### `bolt_hole` — Bolt hole
+```text
+{"op": "bolt_hole", "id": name, "size": "M2"|"M2.5"|"M3"|"M4"|"M5"|"M6"|"M8"|"M10"|"M12", "plane": "xy"|"xz"|"yz", "offset": length,
+ "points": [[a, b], ...] (or "center": [a, b]), "depth": length,
+ "head": "none"|"counterbore"|"countersink"|"nut_trap" (optional, default "none"), "fit": "close"|"normal"|"loose" (optional, default "normal"),
+ "tolerance": length (optional, default "0.3 mm", added to head and nut pockets)}
+  Cuts standard clearance holes for metric bolts into the existing body, with the head or nut pocket sized from ISO tables;
+  use it instead of drawing bolt holes, counterbores or nut traps by hand. Put the sketch plane (plane + offset) on the face
+  the bolt enters; "depth" is signed like an extrude distance (negative cuts against the plane's normal, e.g. down from a top face).
+  The pocket is cut at that face. The step's "id" names the hole cut.
+  Optional "screw": {"length": length, "head": "socket"|"button"|"countersunk", "nut": "none"|"hex"|"nyloc"|"t_nut_20"|"t_nut_30"|"t_nut_40"|"insert",
+   "washer": true|false} puts one screw per hole (and per copy a pattern makes) into the bill of materials. "length" is the
+   shortest that reaches; the next stock length is ordered. Defaults: head "countersunk" for a countersink, else "socket";
+   nut "hex" for a nut trap, else "none". Give "screw" on one side of a joint only, so screws aren't counted twice.
+  Example: {"op": "bolt_hole", "id": "mount_bolts", "size": "M5", "plane": "xy", "offset": "base_thick", "depth": "-base_thick",
+   "head": "nut_trap", "points": [["-hole_off", "-hole_off"], ["hole_off", "-hole_off"], ["hole_off", "hole_off"], ["-hole_off", "hole_off"]]}
+```
+* **Step keys**: `op`, `id` *(required)*, `size`, `points`, `depth`, `head`, `fit`, `tolerance`, `screw`
+
+#### `vent_grid` — Vent grid
+```text
+{"op": "vent_grid", "id": name, "plane": "xy"|"xz"|"yz", "offset": length, "center": [a, b] (optional, default [0, 0]),
+ "width": length, "height": length, "size": length, "depth": length,
+ "hole": "circle"|"hexagon"|"slot" (optional, default "circle"), "length": length (slots only: overall slot length, along b),
+ "wall": length (optional, default "2 mm", material between holes), "layout": "grid"|"staggered" (optional; default "staggered", "grid" for slots),
+ "columns": count, "rows": count (optional; by default as many as fit)}
+  Cuts a pattern of vent holes, filling a width x height area (along a and b) centered on "center", into the existing body.
+  "size" is the hole diameter, the hexagon's width across flats, or the slot width. Put the sketch plane on the face to cut
+  through; "depth" is signed like an extrude distance. Hexagons with "staggered" make a honeycomb. The step's "id" names
+  the last pattern.
+  Example: {"op": "vent_grid", "id": "lid_vent", "plane": "xy", "offset": "lid_thick", "width": "60 mm", "height": "40 mm",
+   "hole": "hexagon", "size": "5 mm", "wall": "1.6 mm", "depth": "-lid_thick"}
+```
+* **Step keys**: `op`, `id` *(required)*, `width`, `height`, `hole`, `size`, `length`, `wall`, `layout`, `depth`, `columns`, `rows`
+
+#### `tslot_profile` — T-slot profile
+```text
+{"op": "tslot_profile", "id": name, "series": "2020"|"2040"|"2060"|"2080"|"3030"|"3060"|"4040"|"4080", "length": length,
+ "plane": "xy"|"xz"|"yz" (optional, default "xy"; the profile runs along the plane's normal), "offset": length (optional),
+ "center": [a, b] (optional, default [0, 0]), "mode": "new_body" (optional),
+ overrides (optional lengths): "slot" (opening), "chamber" (width under the lips), "lip", "spar" (diagonal web), "core",
+ "core_shape": "square"|"round", "bore" (center hole, 0: none), "corner_hole" (0: none), "corner_hole_shape": "square"|"round",
+ "fillet" (outer corners), "recess_width", "recess_depth" (shallow cut along each opening, 0: none)}
+  An aluminum T-slot extrusion with the real section: rounded corner blocks with lips, a core with a bore in each cell,
+  diagonal spars, slots that widen under the lips, and hollows between cells. For mockups and for designing parts
+  that fit it. "2040" is 20 mm along a and 40 mm along b. "length" is signed like an extrude distance. The preset
+  sizes are typical; override them from the supplier's drawing. The step's "id" names the extrusion.
+  Example: {"op": "tslot_profile", "id": "rail", "series": "2040", "length": "rail_len"}
+```
+* **Step keys**: `op`, `id` *(required)*, `series`, `length`, `slot`, `chamber`, `lip`, `spar`, `core`, `core_shape`, `bore`, `corner_hole`, `corner_hole_shape`, `fillet`, `recess_width`, `recess_depth`
+
+#### `linear_rail` — Linear rail
+```text
+{"op": "linear_rail", "id": name, "series": "MGN7"|"MGN9"|"MGN12"|"MGN15", "length": length, "note": text (optional)}
+  A miniature linear guide rail cut to length (bought part), with counterbored holes centered along it. It runs along +x
+  from x = 0, centered on y = 0, bottom on z = 0. Parameters: "<id>_rail_w", "<id>_rail_h", "<id>_pitch" (hole spacing),
+  "<id>_count" (holes), "<id>_start" (x of the first hole). Pair it with rail_carriage steps of the same series.
+```
+* **Step keys**: `op`, `id` *(required)*, `series`, `length`, `note`
+
+#### `nema_motor` — NEMA stepper motor
+```text
+{"op": "nema_motor", "id": name, "size": "14"|"17"|"23", "length": body length (e.g. 40 mm), "note": text (optional, e.g. "1.5 A, 0.42 N·m")}
+  A stepper motor (bought part): square body, pilot boss, shaft, the 4 tapped holes on the face and the cable connector
+  on the -y side near the back. The face is the xy plane at z = 0, the body goes down, the shaft points up (+z) from [0, 0]. Model it in its own component and place it
+  with instances; design mounts around "<id>_pitch" (hole spacing), "<id>_pilot" (boss) and "<id>_face" (body width).
+```
+* **Step keys**: `op`, `id` *(required)*, `note`, `size`, `length`
+
+#### `rail_carriage` — Rail carriage
+```text
+{"op": "rail_carriage", "id": name, "series": "MGN7"|"MGN9"|"MGN12"|"MGN15", "block": "H"|"C" (optional, default "H": long; "C": short), "note": text (optional)}
+  The carriage (block) of a linear_rail (bought part), centered on x = y = 0 in the rail's axes (rail bottom on z = 0),
+  with 4 tapped holes on top, plastic end caps and a grease nipple on the +x end. Parameters: "<id>_height" (top above the rail's bottom), "<id>_width", "<id>_length",
+  "<id>_hole_b" (hole spacing across), "<id>_hole_c" (along). Make it its own component and place each carriage with
+  an instance at its spot along the rail.
+```
+* **Step keys**: `op`, `id` *(required)*, `series`, `block`, `note`
+
+#### `lead_screw` — Lead screw
+```text
+{"op": "lead_screw", "id": name, "length": length, "diameter": mm (optional, default 8), "lead": mm per turn (optional, default 2), "note": text (optional)}
+  A trapezoidal lead screw (bought part), drawn as a plain rod along +z from z = 0. Order lengths are rounded up to the
+  next stock length (100, 150, 200 ... mm), so pick one of those. Pair it with a lead_nut.
+```
+* **Step keys**: `op`, `id` *(required)*, `note`, `length`, `diameter`, `lead`
+
+#### `lead_nut` — Lead screw nut
+```text
+{"op": "lead_nut", "id": name, "lead": mm (optional, default 2), "anti_backlash": true|false (optional, default true), "note": text (optional)}
+  The flanged nut of a T8 lead_screw (bought part). Its flange face is the xy plane at z = 0: the flange is above it,
+  the body below, the screw passes along z. Parameters: "<id>_flange" (diameter), "<id>_flange_t", "<id>_body"
+  (diameter), "<id>_pcd" (circle of the 4 mounting holes, on the x and y axes), "<id>_hole", "<id>_length".
+```
+* **Step keys**: `op`, `id` *(required)*, `anti_backlash`, `lead`, `note`
+
+#### `pillow_block` — Pillow block bearing
+```text
+{"op": "pillow_block", "id": name, "model": "KP08" (optional, default "KP08"), "note": text (optional)}
+  A pillow block bearing (bought part) for the free end of a lead screw. Base on z = 0, centered on the origin, shaft
+  along y at height "<id>_center_h". Parameters: "<id>_bore", "<id>_length" (base, along x), "<id>_width" (along y),
+  "<id>_hole_spacing" (2 base holes on the x axis), "<id>_hole".
+```
+* **Step keys**: `op`, `id` *(required)*, `note`, `model`
+
+#### `shaft_coupler` — Shaft coupler
+```text
+{"op": "shaft_coupler", "id": name, "bore1": mm (optional, default 5), "bore2": mm (optional, default 8), "diameter": mm (optional, default 19), "length": mm (optional, default 25), "note": text (optional)}
+  A flexible shaft coupler (bought part) along +z from z = 0: "bore1" from the bottom (the motor shaft), "bore2" from the
+  top (the screw). Parameters: "<id>_diameter", "<id>_length".
+```
+* **Step keys**: `op`, `id` *(required)*, `bore1`, `bore2`, `note`
+
+#### `spindle` — Spindle
+```text
+{"op": "spindle", "id": name, "collet": "ER8"|"ER11"|"ER16"|"ER20" (optional, default "ER11"), "diameter": body (optional, default 52 mm),
+ "length": body (optional, default 160 mm), "nose": collet nut diameter (optional, default 19 mm), "nose_len": (optional, default 25 mm), "note": text (optional, e.g. "300 W, 48 V")}
+  A DC milling spindle (bought part). The bottom face of the body is the xy plane at z = 0; the body goes up, the
+  collet nose down to z = -"<id>_nose_len". Clamp it around "<id>_diameter".
+```
+* **Step keys**: `op`, `id` *(required)*, `note`, `collet`, `diameter`, `length`, `nose`, `nose_len`
+<!-- END AUTO-GENERATED PLUGINS -->
 
 ### 5.15. Assemblies: `components` and `instances`
 A design made of separate parts lists them under `components`. Each becomes a Fusion component with its own timeline; identical parts are one component placed several times by `instances`, so the parts list counts them and editing the component changes every copy.

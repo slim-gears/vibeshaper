@@ -1,4 +1,4 @@
-"""Profile (lines + 3-point arcs) sketch entity."""
+"""Profile (lines, 3-point arcs, and fitted splines) sketch entity."""
 import math
 
 from ..base import JS_POINT
@@ -16,12 +16,13 @@ class ProfileEntity(BaseEntity):
         'closed': {'type': 'boolean'},
         'segments': {'type': 'array', 'items': {
             'type': 'object',
-            'properties': {'to': JS_POINT, 'through': JS_POINT},
+            'properties': {'to': JS_POINT, 'through': JS_POINT, 'spline': {'type': 'array', 'items': JS_POINT}},
             'required': ['to'],
         }},
     }
-    prompt = ('{"type": "profile", "start": [a, b], "segments": [{"to": [c, d]}, {"to": [e, f], "through": [mx, my]}], "closed": true}'
-              '   outline of lines and 3-point arcs ("through": mid-arc point)')
+    prompt = ('{"type": "profile", "start": [a, b], "segments": [{"to": [c, d]}, {"to": [e, f], "through": [mx, my]}, '
+              '{"to": [g, h], "spline": [[p1x, p1y], ...]}], "closed": true}'
+              '   outline of lines, 3-point arcs ("through"), and fitted splines ("spline": intermediate fit points)')
 
     def validate(self, entity, where, ent_ids):
         h.xy(entity['start'], where)
@@ -30,8 +31,15 @@ class ProfileEntity(BaseEntity):
         for k, sg in enumerate(entity['segments']):
             h.need(sg, f'{where}.segments[{k}]', 'to')
             h.xy(sg['to'], f'{where}.segments[{k}].to')
+            if 'through' in sg and 'spline' in sg:
+                raise ValueError(f'{where}.segments[{k}]: segment cannot have both through and spline')
             if 'through' in sg:
                 h.xy(sg['through'], f'{where}.segments[{k}].through')
+            if 'spline' in sg:
+                if not isinstance(sg['spline'], list) or not sg['spline']:
+                    raise ValueError(f'{where}.segments[{k}].spline: must be a non-empty list of points')
+                for p in sg['spline']:
+                    h.xy(p, f'{where}.segments[{k}].spline')
 
     def draw(self, sk, e, ctx):
         curves, gc = sk.sketchCurves, sk.geometricConstraints
@@ -72,6 +80,27 @@ class ProfileEntity(BaseEntity):
                 h.try_call(gc.addCoincident, mid, arc)
                 mids.append((mid, sg['through']))
                 made.append(arc)
+            elif 'spline' in sg:
+                import adsk.core
+                coll = adsk.core.ObjectCollection.create()
+                coll.add(prev if prev is not None else at(e['start']))
+                for p in sg['spline']:
+                    coll.add(at(p))
+                coll.add(verts[0] if closing else at(sg['to']))
+                sp = curves.sketchFittedSplines.add(coll)
+                if prev is None:
+                    verts.append(sp.startSketchPoint)
+                elif sp.startSketchPoint is not prev:
+                    h.try_call(gc.addCoincident, sp.startSketchPoint, prev)
+                if closing:
+                    if sp.endSketchPoint is not verts[0]:
+                        h.try_call(gc.addCoincident, sp.endSketchPoint, verts[0])
+                else:
+                    verts.append(sp.endSketchPoint)
+                    coords.append(sg['to'])
+                for idx, p in enumerate(sg['spline'], start=1):
+                    mids.append((sp.fitPoints.item(idx), p))
+                made.append(sp)
             else:
                 line = curves.sketchLines.addByTwoPoints(a, verts[0] if closing else at(sg['to']))
                 if prev is None:

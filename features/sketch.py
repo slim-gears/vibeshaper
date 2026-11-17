@@ -18,8 +18,9 @@ class SketchFeature(BaseFeature):
     prompt = (
         'Sketch:\n'
         '   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz", "offset": length (optional), '
-        '"entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal", '
-        '"entities": [id1, id2]}, ...] (optional)}'
+        '"entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal"|"coincident", '
+        '"entities": [id1, id2]}, {"type": "midpoint", "point": pt_id, "entity": line_id}, '
+        '{"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}'
     )
 
     def __init__(self):

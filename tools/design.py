@@ -513,6 +513,11 @@ def get_sketch(ctx, args):
     for a in _items(_get(sc, 'sketchArcs')):
         curves.append({'type': 'arc', 'center': _pt(a.centerSketchPoint.geometry), 'radius': _mm(a.radius),
                        'start': _pt(a.startSketchPoint.geometry), 'end': _pt(a.endSketchPoint.geometry)})
+    for sp in _items(_get(sc, 'sketchFittedSplines')):
+        curves.append({'type': 'spline',
+                       'points': [_pt(fp.geometry) for fp in _items(_get(sp, 'fitPoints'))],
+                       **({'closed': True} if _get(sp, 'isClosed') else {}),
+                       **({'construction': True} if _get(sp, 'isConstruction') else {})})
     other = len(_items(sc)) - len(curves)
     info['curves'] = _page(curves, args)
     if other > 0:

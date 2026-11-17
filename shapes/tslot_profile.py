@@ -19,6 +19,7 @@ from .base import BaseShape
 
 _NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 _PLANES = ('xy', 'xz', 'yz')
+_MIRROR_PLANES = {'xy': ('yz', 'xz'), 'xz': ('yz', 'xy'), 'yz': ('xz', 'xy')}
 _SERIES = re.compile(r'^(\d{2})(\d{2,3})$')
 _R2 = math.sqrt(0.5)
 SHAPES = ('square', 'round')
@@ -123,7 +124,7 @@ class TSlotProfile(BaseShape):
     }
     prompt = '''{"op": "tslot_profile", "id": name, "series": "2020"|"2040"|"2060"|"2080"|"3030"|"3060"|"4040"|"4080", "length": length,
  "plane": "xy"|"xz"|"yz" (optional, default "xy"; the profile runs along the plane's normal), "offset": length (optional),
- "center": [a, b] (optional, default [0, 0]), "mode": "new_body"|"join" (optional),
+ "center": [a, b] (optional, default [0, 0]), "mode": "new_body" (optional),
  overrides (optional lengths): "slot" (opening), "chamber" (width under the lips), "lip", "spar" (diagonal web), "core",
  "core_shape": "square"|"round", "bore" (center hole, 0: none), "corner_hole" (0: none), "corner_hole_shape": "square"|"round",
  "fillet" (outer corners), "recess_width", "recess_depth" (shallow cut along each opening, 0: none)}
@@ -144,8 +145,8 @@ class TSlotProfile(BaseShape):
                              f'(cell sizes {tuple(PRESETS)}, up to 8 cells)')
         if step.get('plane', 'xy') not in _PLANES:
             raise ValueError(f'{where}: plane must be one of {_PLANES}')
-        if step.get('mode', 'new_body') not in ('new_body', 'join'):
-            raise ValueError(f'{where}: mode must be "new_body" or "join"')
+        if step.get('mode', 'new_body') != 'new_body':
+            raise ValueError(f'{where}: mode must be "new_body"')
         for key in ('core_shape', 'corner_hole_shape'):
             if step.get(key, 'square') not in SHAPES:
                 raise ValueError(f'{where}: {key} must be one of {SHAPES}')
@@ -226,11 +227,8 @@ class TSlotProfile(BaseShape):
             return [expr(ca, xy[0]), expr(cb, xy[1])]
 
         def chain(eid, start, segs):
-            return {'type': 'profile', 'id': eid, 'start': point(start), 'closed': False,
+            return {'type': 'profile', 'id': eid, 'start': point(start), 'closed': True,
                     'segments': [{'to': point(q), **({'through': point(th)} if th else {})} for q, th in segs]}
-
-        def mirror(eid, refs, a, b):
-            return {'type': 'mirror', 'id': eid, 'entities': refs, 'line': [point(a), point(b)]}
 
         half_cell = _p('cell', 0.5)
         k = _p('spar', _R2)              # half a spar's width, measured along a face
@@ -269,67 +267,51 @@ class TSlotProfile(BaseShape):
             for uv, th in path:
                 segs.append((at(c, t, uv), None if th is None else at(c, t, th)))
 
-        def corner(to_diagonal):
-            """The bottom-right corner, rounded; to_diagonal stops halfway, on its diagonal."""
+        def corner():
+            """The bottom-right corner, rounded."""
             if not has['fillet']:
                 segs.append(((hw, -hh), None))
                 return
             cx, cy = hw - f, f - hh
             segs.append(((cx, -hh), None))
-            if to_diagonal:
-                segs.append(((cx + f * _R2, cy - f * _R2),
-                             (cx + f * math.sin(math.pi / 8), cy - f * math.cos(math.pi / 8))))
-            else:
-                segs.append(((hw, cy), (cx + f * _R2, cy - f * _R2)))
+            segs.append(((hw, cy), (cx + f * _R2, cy - f * _R2)))
 
-        # The outline: draw a part from the bottom slot's center line around the bottom-right
-        # corner, then mirror it. A square profile is symmetric about its diagonals too, so 1/8
-        # is enough; a 2040 or longer needs 1/4, up to the horizontal center line.
+        # The outline: draw the bottom-right quadrant closed along the center lines, extrude it,
+        # cut quadrant holes, and mirror across both symmetry planes in 3D.
         bottom = (_ZERO, -hh)
         start = at(bottom, (1, 0), floor)
         put(bottom, (1, 0), second_half)
-        vertical, horizontal = ((_ZERO, -hh), (_ZERO, hh)), ((-hw, _ZERO), (hw, _ZERO))
-        if cells == 1:
-            corner(True)
-            outline = [chain('part', start, segs),
-                       mirror('quarter', ['part'], (_ZERO, _ZERO), (hw, -hh)),
-                       mirror('half', ['quarter'], *vertical),
-                       mirror('whole', ['half'], *horizontal)]
-        else:
-            corner(False)
-            for i, y in enumerate(cell_y):
-                if 2 * i + 1 < cells:
-                    put((hw, y), (0, 1), first_half + second_half)
-                elif 2 * i + 1 == cells:  # the middle cell's slot is cut by the center line
-                    put((hw, y), (0, 1), first_half)
-            if cells % 2 == 0:
-                segs.append(((hw, _ZERO), None))
-            outline = [chain('part', start, segs),
-                       mirror('half', ['part'], *vertical),
-                       mirror('whole', ['half'], *horizontal)]
+        corner()
+        for i, y in enumerate(cell_y):
+            if 2 * i + 1 < cells:
+                put((hw, y), (0, 1), first_half + second_half)
+            elif 2 * i + 1 == cells:  # middle cell's slot is cut by the horizontal center line
+                put((hw, y), (0, 1), first_half)
+        if cells % 2 == 0:
+            segs.append(((hw, _ZERO), None))
+        segs.append(((_ZERO, _ZERO), None))
+        outline = [chain('part', start, segs)]
+
+        plane = step.get('plane', 'xy')
 
         def sketch(key, entities):
-            sk = {'op': 'sketch', 'id': n(key), 'plane': step.get('plane', 'xy'), 'entities': entities}
+            sk = {'op': 'sketch', 'id': n(key), 'plane': plane, 'entities': entities}
             if 'offset' in step:
                 sk['offset'] = step['offset']
             return sk
 
         steps = [
             sketch('sk', outline),
-            {'op': 'extrude', 'id': gid, 'sketch': n('sk'), 'distance': n('length'),
-             'mode': step.get('mode', 'new_body')},
+            {'op': 'extrude', 'id': n('qtr'), 'sketch': n('sk'), 'distance': n('length'), 'mode': 'new_body'},
         ]
 
-        # Holes: drawn below the horizontal center line (and right of the vertical one), then
-        # mirrored. A bore on the center line is drawn whole.
-        holes, lower, right_side = [], [], []
+        # Holes: draw only in the quadrant (<= center lines); the 3D mirrors copy them across.
+        holes = []
         if has['bore']:
             for i, y in enumerate(cell_y):
                 if 2 * i + 1 <= cells:
                     holes.append({'type': 'circle', 'id': f'bore{i}', 'center': point((_ZERO, y)),
                                   'diameter': n('bore')})
-                    if 2 * i + 1 < cells:
-                        lower.append(f'bore{i}')
         if has['corner_hole']:
             off = _p('block', 0.5)
             c = point((hw - off, off - hh))
@@ -338,7 +320,6 @@ class TSlotProfile(BaseShape):
                               'width': n('corner_hole'), 'height': n('corner_hole')})
             else:
                 holes.append({'type': 'circle', 'id': 'corner', 'center': c, 'diameter': n('corner_hole')})
-            right_side.append('corner')
         # The hollow between two cells is bounded by both cores, the four spars, the stubs from
         # the side walls and the walls. Its right half runs from the lower core to the upper one.
         stub_x = hw - _p('block') + _p('spar', 1 - _R2)
@@ -354,23 +335,26 @@ class TSlotProfile(BaseShape):
             path = [(p1, arc1), ((stub_x, stub_y), None), ((wall_x, stub_y), None)]
             if 2 * j == cells:   # on the horizontal center line: a quarter is enough
                 path.append(((wall_x, _ZERO), None))
+                path.append(((_ZERO, _ZERO), None))
             else:
                 flip = lambda q: (q[0], -q[1])
                 path += [((wall_x, -stub_y), None), ((stub_x, -stub_y), None), (flip(p1), None),
                          (flip(top), flip(arc1) if round_core else None)]
             sh = lambda q: (q[0], q[1] + ys)
             holes.append(chain(f'hollow{j}', sh(top), [(sh(q), sh(th) if th else None) for q, th in path]))
-            right_side.append(f'hollow{j}')
-        if right_side:
-            holes.append(mirror('left', right_side, *vertical))
-            lower = ['left'] + lower
-        if lower:
-            holes.append(mirror('upper', lower, *horizontal))
         if holes:
             steps += [
                 sketch('hole_sk', holes),
                 {'op': 'extrude', 'id': n('hole_cut'), 'sketch': n('hole_sk'), 'distance': n('length'), 'mode': 'cut'},
             ]
+        plane_a, plane_b = _MIRROR_PLANES[plane]
+        m1 = {'op': 'mirror', 'id': n('half'), 'target': n('qtr'), 'plane': plane_a, 'combine': True}
+        if not _is_zero(ca):
+            m1['offset'] = _length(ca)
+        m2 = {'op': 'mirror', 'id': gid, 'target': n('qtr'), 'plane': plane_b, 'combine': True}
+        if not _is_zero(cb):
+            m2['offset'] = _length(cb)
+        steps += [m1, m2]
         return params, steps
 
     def bom(self, step):

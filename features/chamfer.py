@@ -17,7 +17,7 @@ class ChamferFeature(BaseFeature):
         '   {"op": "chamfer", "distance": length, "edges": "vertical"|"top"|"bottom"|"circular"|"all"|edge_object}\n'
         '   edge_object picks edges made by an earlier step: {"feature": step_id, "faces": "all"|"side"|"start"|"end" (optional), '
         '"exclude": step_id or [ids] (optional, drops edges touching those steps\' faces), "on": sketch_id (optional, only edges in that sketch\'s plane), '
-        '"type": "circle"|"line" (optional)}.\n'
+        '"type": "circle"|"line" (optional), "at": "top"|"bottom" (optional, highest/lowest Z), "direction": "x"|"y"|"z" (optional, line edge axis)}.\n'
         '   Prefer it over the broad words when only some edges should change, e.g. {"feature": "screw_cut", "type": "circle", "exclude": "pocket_cut"}.'
     )
 

@@ -47,11 +47,11 @@
           "plane": "xy",
           "entities": [
             {"type": "center_rectangle", "id": "ear_fl", "center": ["-14 mm", "-48 mm"], "width": "22 mm", "height": "22 mm"},
-            {"type": "center_rectangle", "id": "ear_fr", "center": ["106 mm", "-48 mm"], "width": "22 mm", "height": "22 mm"},
-            {"type": "mirror", "entities": ["ear_fl", "ear_fr"], "line": [[0, 0], [1, 0]]}
+            {"type": "center_rectangle", "id": "ear_fr", "center": ["106 mm", "-48 mm"], "width": "22 mm", "height": "22 mm"}
           ]
         },
         {"op": "extrude", "id": "ears", "sketch": "ears_sk", "distance": "6 mm", "mode": "join"},
+        {"op": "mirror", "id": "ears_back", "feature": "ears", "plane": "xz"},
         {
           "op": "bolt_hole",
           "id": "frame_bolts",

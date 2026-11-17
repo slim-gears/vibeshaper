@@ -5,6 +5,7 @@ All lengths default to mm. Any length may be a number, a literal ("20 mm") or an
 expression over user parameters ("box_width - 2 * wall_thick").
 """
 import json
+import pathlib
 import re
 
 try:
@@ -150,6 +151,87 @@ def feature_rules_prompt():
 def shapes_prompt():
     """What the shape plugins tell the model about themselves ('' when there are none)."""
     return shapes.prompt()
+
+
+SPEC_BEGIN = '<!-- BEGIN AUTO-GENERATED PLUGINS -->'
+SPEC_END = '<!-- END AUTO-GENERATED PLUGINS -->'
+
+
+def plugin_spec_markdown():
+    """Render the Sketch Entities, Timeline Operations, and Shapes reference from registered plugins."""
+    ents = features.entities.get_all_entities()
+    feats = features.get_all_features()
+    shps = shapes.get_all_shapes()
+    out = [
+        SPEC_BEGIN,
+        '<!-- Auto-generated from features/, features/entities/, and shapes/ plugins via dsl.sync_spec(). -->',
+        '',
+        '## 4. Sketch Entities',
+        '',
+        'A sketch step contains a non-empty `entities` array. Every entity may include an optional `"id"` to be referenced by sketch constraints.',
+    ]
+    for i, e in enumerate(ents, 1):
+        req = set(getattr(e, 'required', ()))
+        keys = [f'`{k}` *(required)*' if k in req else f'`{k}` *(optional)*' for k in e.schema]
+        out.extend([
+            '',
+            f'### 4.{i}. {e.name} (`{e.type}`)',
+            '```text',
+            e.prompt.strip(),
+            '```',
+            '* **Keys**: `type` *(required)*' + (', ' + ', '.join(keys) if keys else '') + ', `id` *(optional)*',
+        ])
+    out.extend([
+        '',
+        '---',
+        '',
+        '## 5. Timeline Operations',
+        '',
+        f'The `timeline` is an ordered array of step objects. Each step specifies `"op"` from the {len(feats)} core operations below or the shape plugins in Section 5.{len(feats) + 1}.',
+    ])
+    for i, f in enumerate(feats, 1):
+        keys = [f'`{k}`' for k in f.get_schema()]
+        out.extend([
+            '',
+            f'### 5.{i}. `{f.op}` ({f.name})',
+            '```text',
+            f.prompt.strip(),
+            '```',
+            '* **Step keys**: `op`, `id` *(optional unless required above)*' + (', ' + ', '.join(keys) if keys else ''),
+        ])
+        if getattr(f, 'rules', ''):
+            out.append(f.rules.strip())
+    out.extend([
+        '',
+        f'### 5.{len(feats) + 1}. Shapes (plugin steps)',
+        'Ready-made parametric parts and features in `shapes/`. Each expands into ordinary parameters and timeline steps before validation and build, prefixed by its required `"id"` (`<id>_...`). Every preset dimension can be overridden.',
+    ])
+    for s in shps:
+        keys = [f'`{k}`' for k in s.schema if k != 'id']
+        out.extend([
+            '',
+            f'#### `{s.op}` — {s.name}',
+            '```text',
+            s.prompt.strip(),
+            '```',
+            '* **Step keys**: `op`, `id` *(required)*' + (', ' + ', '.join(keys) if keys else ''),
+        ])
+    out.append(SPEC_END)
+    return '\n'.join(out)
+
+
+def sync_spec(path=None):
+    """Update the auto-generated plugin reference block inside DSL_SPEC.md if it changed."""
+    p = pathlib.Path(path) if path else pathlib.Path(__file__).parent / 'DSL_SPEC.md'
+    text = p.read_text(encoding='utf-8')
+    if SPEC_BEGIN not in text or SPEC_END not in text:
+        raise ValueError(f'{p.name} is missing {SPEC_BEGIN} ... {SPEC_END} markers')
+    before, rest = text.split(SPEC_BEGIN, 1)
+    _, after = rest.split(SPEC_END, 1)
+    updated = before + plugin_spec_markdown() + after
+    if updated != text:
+        p.write_text(updated, encoding='utf-8', newline='\n')
+    return updated
 
 
 def expand_shapes(d):

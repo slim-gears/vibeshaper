@@ -108,13 +108,15 @@
     }
   }
 
-  function isMock() {
-    return typeof window.adsk === 'undefined' || !window.adsk.fusionSendData;
+  const forceMock = /[?&]mock\b/.test(location.search);
+
+  function hasBridge() {
+    return !forceMock && typeof window.adsk !== 'undefined' && typeof window.adsk.fusionSendData === 'function';
   }
 
   function send(action, payload) {
     const data = JSON.stringify(payload || {});
-    if (!isMock()) {
+    if (hasBridge()) {
       return Promise.resolve(window.adsk.fusionSendData(action, data));
     }
     if (action === 'copy') {
@@ -169,7 +171,9 @@
       btnCopy.disabled = true;
       btnSave.disabled = true;
       updateCounts(0, 0, 0);
-      scroll.append(renderEmpty('No Bill of Materials yet', 'Build a design first, then open BOM from any version card.'));
+      scroll.append(p && p.error
+        ? renderEmpty('Could not compute Bill of Materials', p.error)
+        : renderEmpty('No Bill of Materials yet', 'Build a design first, then open BOM from any version card.'));
       return;
     }
 
@@ -306,14 +310,31 @@
     } catch (_) {}
   }
 
-  if (isMock()) {
-    loadMock();
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'vibeshaper_mock_bom') loadMock();
-    });
-  } else {
-    send('bom_ready', {});
+  function connect() {
+    const start = Date.now();
+    let mockWired = false;
+    (function attempt() {
+      if (hasBridge()) {
+        send('bom_ready', {});
+        return;
+      }
+      if (state.payload) return;
+      const elapsed = Date.now() - start;
+      if (forceMock || elapsed > 1200) {
+        if (!mockWired) {
+          mockWired = true;
+          loadMock();
+          window.addEventListener('storage', (e) => {
+            if (e.key === 'vibeshaper_mock_bom') loadMock();
+          });
+        }
+        if (forceMock || elapsed > 10000) return;
+      }
+      setTimeout(attempt, 50);
+    })();
   }
+
+  connect();
 })();
 </script>
 </body>

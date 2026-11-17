@@ -4,6 +4,20 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.8.0]
+
+### Added
+- **Fitted spline curves (`spline` and `profile` `"spline"` segments).** Added the `spline` sketch entity (open or closed periodic splines) and `"spline"` intermediate fit-point segments inside `profile`, dimensioned parametrically on every fit point and reported by `design.inspect_sketch`.
+- **`"offset"` support on 3D `mirror`.** `mirror` steps now accept an optional `"offset"` distance on base planes (`"xy"`, `"xz"`, `"yz"`), and `tslot_profile` now extrudes one quadrant and completes the profile in 3D via native `mirror` features.
+- **Auto-generated plugin reference in `DSL_SPEC.md`.** `dsl.sync_spec()` keeps Sections 4 and 5 of `DSL_SPEC.md` synchronized with live feature, sketch entity, and shape plugin `.prompt` specifications whenever `test_dsl.py` runs.
+
+### Fixed
+- **Stopping a build in progress.** Clicking **Stop** during geometry generation now immediately aborts remaining steps and rolls back the partial Fusion 360 transaction (including restoring any prior version replaced by a modification build).
+- **Bill of Materials palette startup handshake.** Opening the Bill of Materials window for the first time in a session now waits for Fusion's asynchronous `window.adsk` bridge injection before sending `bom_ready`, instead of falling into standalone preview mode and staying on "Waiting for design…".
+
+### Removed
+- **2D sketch `mirror` entity.** Symmetric designs now model one half/quadrant and use native 3D `mirror` (`features/mirror.py`) instead of custom sketch solver mirroring.
+
 ## [0.7.0]
 
 ### Added
@@ -78,7 +92,9 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/slim-gears/vibeshaper/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/slim-gears/vibeshaper/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/slim-gears/vibeshaper/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/slim-gears/vibeshaper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/slim-gears/vibeshaper/compare/v0.4.0...v0.5.0

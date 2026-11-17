@@ -22,8 +22,10 @@ class CoilFeature(BaseFeature):
     }
     prompt = (
         'Coil (Spring / Helix):\n'
-        '   {"op": "coil", "diameter": coil_dia, "pitch": pitch, "revolutions": count, "section_size": wire_dia, '
-        '"axis": "z"|"x"|"y" (optional, default "z"), "mode": "new_body"|"join"|"cut" (optional, default "new_body")}'
+        '   {"op": "coil", "diameter": coil_dia, "pitch": pitch, "revolutions": count, "height": length (optional; any 2 of pitch, revolutions, height), '
+        '"section_size": wire_dia, "section": "circle"|"square" (optional, default "circle"), "center": [x, y, z] (optional, default [0, 0, 0]), '
+        '"clockwise": true|false (optional, default true), "axis": "z"|"x"|"y" (optional, default "z"), '
+        '"mode": "new_body"|"join"|"cut" (optional, default "new_body")}'
     )
     rules = '- For springs, coils, or screw helices, use `coil` with `diameter` (major coil diameter), `section_size` (wire diameter), and `pitch` / `revolutions` (or `height`).'
 

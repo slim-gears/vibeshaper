@@ -1,0 +1,901 @@
+{
+  "name": "Aero-Contoured X-Gantry Router & Dust Manifold",
+  "parameters": {
+    "gantry_span": "300 mm",
+    "leg_h": "170 mm",
+    "beam_z": "140 mm",
+    "cheek_t": "8 mm",
+    "screw_y": "-45 mm",
+    "gear_mod": "1.5 mm",
+    "pinion_teeth": "16",
+    "gear_teeth": "32",
+    "gear_thick": "8 mm",
+    "carr_x": "150 mm",
+    "carr_pitch": "60 mm",
+    "saddle_w": "96 mm",
+    "saddle_t": "10 mm",
+    "clamp_len": "32 mm",
+    "spindle_y": "70 mm",
+    "spindle_z": "116 mm",
+    "spindle_d": "52.2 mm",
+    "duct_od": "28 mm",
+    "duct_id": "23 mm"
+  },
+  "timeline": [],
+  "components": [
+    {
+      "id": "gantry_beam",
+      "name": "2060 Gantry Crossbeam",
+      "timeline": [
+        {
+          "op": "tslot_profile",
+          "id": "beam",
+          "series": "2060",
+          "plane": "yz",
+          "center": [0, "beam_z"],
+          "length": "gantry_span"
+        }
+      ]
+    },
+    {
+      "id": "frame_leg",
+      "name": "2020 Upright Column",
+      "timeline": [
+        {
+          "op": "tslot_profile",
+          "id": "leg",
+          "series": "2020",
+          "plane": "xy",
+          "length": "leg_h"
+        }
+      ]
+    },
+    {
+      "id": "rail",
+      "name": "MGN12 Linear Rail",
+      "timeline": [
+        {
+          "op": "linear_rail",
+          "id": "rail",
+          "series": "MGN12",
+          "length": "gantry_span"
+        }
+      ],
+      "bom": [
+        {
+          "category": "Fasteners",
+          "item": "M3x8 socket head cap screw (ISO 4762)",
+          "qty": "floor(gantry_span / 25 mm)"
+        },
+        {
+          "category": "Fasteners",
+          "item": "M3 T-nut for 20-series slot",
+          "qty": "floor(gantry_span / 25 mm)"
+        }
+      ]
+    },
+    {
+      "id": "carriage",
+      "name": "MGN12H Carriage",
+      "timeline": [
+        {
+          "op": "rail_carriage",
+          "id": "carriage",
+          "series": "MGN12",
+          "block": "H"
+        }
+      ]
+    },
+    {
+      "id": "motor",
+      "name": "NEMA17 Stepper",
+      "timeline": [
+        {
+          "op": "nema_motor",
+          "id": "motor",
+          "size": "17",
+          "length": "48 mm",
+          "note": "1.8 deg, 1.7 A, 0.55 N·m"
+        }
+      ]
+    },
+    {
+      "id": "screw",
+      "name": "T8 Lead Screw",
+      "timeline": [
+        {
+          "op": "lead_screw",
+          "id": "screw",
+          "length": "gantry_span + 30 mm",
+          "lead": 8
+        }
+      ]
+    },
+    {
+      "id": "nut",
+      "name": "T8 Anti-Backlash Nut",
+      "timeline": [
+        {
+          "op": "lead_nut",
+          "id": "nut",
+          "lead": 8,
+          "anti_backlash": true
+        }
+      ]
+    },
+    {
+      "id": "bearing",
+      "name": "KP08 Pillow Block",
+      "timeline": [
+        {
+          "op": "pillow_block",
+          "id": "bearing",
+          "model": "KP08"
+        }
+      ]
+    },
+    {
+      "id": "spindle",
+      "name": "ER11 DC Spindle",
+      "timeline": [
+        {
+          "op": "spindle",
+          "id": "spindle",
+          "collet": "ER11",
+          "diameter": "52 mm",
+          "length": "150 mm",
+          "note": "500 W, 48 V brushless"
+        }
+      ]
+    },
+    {
+      "id": "upright_cheek",
+      "name": "Spline-Contoured Gantry Cheek",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "cheek_sk",
+          "plane": "yz",
+          "entities": [
+            {
+              "type": "profile",
+              "start": [0, 0],
+              "segments": [
+                {"to": ["68 mm", 0]},
+                {"to": ["68 mm", "12 mm"]},
+                {
+                  "to": ["22 mm", "leg_h - 6 mm"],
+                  "spline": [["48 mm", "48 mm"], ["34 mm", "96 mm"], ["26 mm", "134 mm"]]
+                },
+                {"to": [0, "leg_h"], "through": ["12 mm", "leg_h - 1.5 mm"]},
+                {"to": [0, 0]}
+              ]
+            }
+          ]
+        },
+        {"op": "extrude", "id": "cheek_half", "sketch": "cheek_sk", "distance": "cheek_t", "mode": "new_body"},
+        {
+          "op": "sketch",
+          "id": "window_sk",
+          "plane": "yz",
+          "entities": [
+            {
+              "type": "spline",
+              "points": [["26 mm", "24 mm"], ["40 mm", "42 mm"], ["24 mm", "76 mm"], ["17 mm", "44 mm"]],
+              "closed": true
+            }
+          ]
+        },
+        {"op": "extrude", "id": "window_cut", "sketch": "window_sk", "distance": "cheek_t", "mode": "cut"},
+        {"op": "mirror", "id": "cheek_sym", "plane": "xz", "combine": true},
+        {
+          "op": "bolt_hole",
+          "id": "cheek_bolts",
+          "size": "M5",
+          "plane": "yz",
+          "offset": 0,
+          "depth": "cheek_t",
+          "head": "counterbore",
+          "points": [[0, "30 mm"], [0, "90 mm"], [0, "148 mm"]],
+          "screw": {"length": 16, "nut": "t_nut_20", "washer": true}
+        }
+      ]
+    },
+    {
+      "id": "kp08_bracket",
+      "name": "KP08 Bearing L-Bracket",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "shelf_sk",
+          "plane": "xy",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "-34 mm"], "width": "40 mm", "height": "68 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "shelf", "sketch": "shelf_sk", "distance": "-8 mm", "mode": "new_body"},
+        {
+          "op": "sketch",
+          "id": "flange_sk",
+          "plane": "xz",
+          "offset": "-8 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "18.5 mm"], "width": "40 mm", "height": "53 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "flange", "sketch": "flange_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "gusset_sk",
+          "plane": "yz",
+          "offset": "15 mm",
+          "entities": [
+            {"type": "polygon", "points": [["-8 mm", 0], ["-48 mm", 0], ["-8 mm", "40 mm"]]}
+          ]
+        },
+        {"op": "extrude", "id": "shelf_gusset", "sketch": "gusset_sk", "distance": "5 mm", "mode": "join"},
+        {"op": "mirror", "id": "gusset_sym", "feature": "shelf_gusset", "plane": "yz"},
+        {
+          "op": "bolt_hole",
+          "id": "kp_tslot_bolts",
+          "size": "M5",
+          "plane": "xz",
+          "offset": "-8 mm",
+          "depth": "8 mm",
+          "head": "countersink",
+          "points": [["-8 mm", "35 mm"], ["8 mm", "35 mm"]],
+          "screw": {"length": 12, "nut": "t_nut_20"}
+        },
+        {
+          "op": "bolt_hole",
+          "id": "kp_base_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": "-8 mm",
+          "depth": "8 mm",
+          "head": "nut_trap",
+          "points": [[0, "-56 mm"], [0, "-14 mm"]],
+          "screw": {"length": 18, "washer": true}
+        }
+      ]
+    },
+    {
+      "id": "motor_bracket",
+      "name": "NEMA17 Gear-Drive Mount",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "flange_sk",
+          "plane": "yz",
+          "offset": "-58 mm",
+          "entities": [
+            {
+              "type": "center_rectangle",
+              "center": ["screw_y", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2"],
+              "width": "46 mm",
+              "height": "46 mm"
+            }
+          ]
+        },
+        {"op": "extrude", "id": "nema_flange", "sketch": "flange_sk", "distance": "8 mm", "mode": "new_body"},
+        {
+          "op": "sketch",
+          "id": "arm_sk",
+          "plane": "xz",
+          "offset": "-24 mm",
+          "entities": [
+            {
+              "type": "polygon",
+              "points": [
+                ["-58 mm", "172 mm"],
+                ["-58 mm", "196 mm"],
+                ["16 mm", "172 mm"],
+                ["16 mm", "148 mm"],
+                [0, "148 mm"],
+                [0, "172 mm"]
+              ]
+            }
+          ]
+        },
+        {"op": "extrude", "id": "arm", "sketch": "arm_sk", "distance": "14 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "pilot_sk",
+          "plane": "yz",
+          "offset": "-58 mm",
+          "entities": [
+            {
+              "type": "circle",
+              "center": ["screw_y", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2"],
+              "diameter": "23 mm"
+            }
+          ]
+        },
+        {"op": "extrude", "id": "pilot_cut", "sketch": "pilot_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "mb_nema_bolts",
+          "size": "M3",
+          "plane": "yz",
+          "offset": "-58 mm",
+          "depth": "8 mm",
+          "points": [
+            ["screw_y - 15.5 mm", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2 - 15.5 mm"],
+            ["screw_y + 15.5 mm", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2 - 15.5 mm"],
+            ["screw_y - 15.5 mm", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2 + 15.5 mm"],
+            ["screw_y + 15.5 mm", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2 + 15.5 mm"]
+          ],
+          "screw": {"length": 12, "washer": true}
+        },
+        {
+          "op": "bolt_hole",
+          "id": "mb_tslot_bolt",
+          "size": "M5",
+          "plane": "xz",
+          "offset": "-24 mm",
+          "depth": "14 mm",
+          "head": "counterbore",
+          "points": [["8 mm", "beam_z + 20 mm"]],
+          "screw": {"length": 20, "nut": "t_nut_20"}
+        }
+      ]
+    },
+    {
+      "id": "pinion_gear",
+      "name": "16T Motor Pinion Gear",
+      "material": "POM (Delrin)",
+      "timeline": [
+        {
+          "op": "spur_gear",
+          "id": "pinion",
+          "module": "gear_mod",
+          "teeth": "pinion_teeth",
+          "thickness": "gear_thick",
+          "bore": "5 mm"
+        },
+        {
+          "op": "sketch",
+          "id": "collar_sk",
+          "plane": "xy",
+          "offset": "gear_thick",
+          "entities": [{"type": "circle", "center": [0, 0], "diameter": "15 mm"}]
+        },
+        {"op": "extrude", "id": "collar", "sketch": "collar_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "collar_bore_sk",
+          "plane": "xy",
+          "offset": "gear_thick",
+          "entities": [{"type": "circle", "center": [0, 0], "diameter": "5 mm"}]
+        },
+        {"op": "extrude", "id": "collar_bore", "sketch": "collar_bore_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "pinion_set_screw",
+          "size": "M3",
+          "plane": "xz",
+          "offset": "-7.5 mm",
+          "center": [0, "gear_thick + 4 mm"],
+          "depth": "7.5 mm",
+          "screw": {"length": 6}
+        }
+      ],
+      "bom": [
+        {"category": "Fasteners", "item": "M3 square nut (DIN 562)", "qty": 1}
+      ]
+    },
+    {
+      "id": "driven_gear",
+      "name": "32T Lead-Screw Driven Gear",
+      "material": "POM (Delrin)",
+      "timeline": [
+        {
+          "op": "spur_gear",
+          "id": "gear",
+          "module": "gear_mod",
+          "teeth": "gear_teeth",
+          "thickness": "gear_thick",
+          "rotate": "180 deg / gear_teeth",
+          "bore": "8 mm"
+        },
+        {
+          "op": "sketch",
+          "id": "collar_sk",
+          "plane": "xy",
+          "offset": "gear_thick",
+          "entities": [{"type": "circle", "center": [0, 0], "diameter": "18 mm"}]
+        },
+        {"op": "extrude", "id": "collar", "sketch": "collar_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "collar_bore_sk",
+          "plane": "xy",
+          "offset": "gear_thick",
+          "entities": [{"type": "circle", "center": [0, 0], "diameter": "8 mm"}]
+        },
+        {"op": "extrude", "id": "collar_bore", "sketch": "collar_bore_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "sketch",
+          "id": "web_hole_sk",
+          "plane": "xy",
+          "entities": [{"type": "circle", "center": ["14.5 mm", 0], "diameter": "5 mm"}]
+        },
+        {"op": "extrude", "id": "web_hole", "sketch": "web_hole_sk", "distance": "gear_thick", "mode": "cut"},
+        {"op": "circular_pattern", "id": "web_holes", "feature": "web_hole", "axis": "z", "quantity": 5},
+        {
+          "op": "bolt_hole",
+          "id": "gear_set_screw",
+          "size": "M3",
+          "plane": "xz",
+          "offset": "-9 mm",
+          "center": [0, "gear_thick + 4 mm"],
+          "depth": "9 mm",
+          "screw": {"length": 6}
+        }
+      ],
+      "bom": [
+        {"category": "Fasteners", "item": "M3 square nut (DIN 562)", "qty": 1}
+      ]
+    },
+    {
+      "id": "cable_bridge",
+      "name": "Offset-Mirrored Spline Cable Arch",
+      "material": "Carbon-Fiber PETG",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "arch_sk",
+          "plane": "xz",
+          "offset": "-12 mm",
+          "entities": [
+            {
+              "type": "profile",
+              "start": ["-20 mm", "leg_h"],
+              "segments": [
+                {"to": [0, "leg_h"]},
+                {"to": [0, "leg_h + 20 mm"]},
+                {
+                  "to": ["gantry_span / 2", "leg_h + 36 mm"],
+                  "spline": [["18 mm", "leg_h + 31 mm"], ["42 mm", "leg_h + 36 mm"]]
+                },
+                {"to": ["gantry_span / 2", "leg_h + 50 mm"]},
+                {"to": ["45 mm", "leg_h + 50 mm"]},
+                {
+                  "to": ["-2 mm", "leg_h + 26 mm"],
+                  "spline": [["22 mm", "leg_h + 46 mm"], ["6 mm", "leg_h + 36 mm"]]
+                },
+                {"to": ["-2 mm", "leg_h + 12 mm"]},
+                {"to": ["-20 mm", "leg_h + 12 mm"]},
+                {"to": ["-20 mm", "leg_h"]}
+              ]
+            }
+          ]
+        },
+        {"op": "extrude", "id": "arch_half", "sketch": "arch_sk", "distance": "24 mm", "mode": "new_body"},
+        {
+          "op": "mirror",
+          "id": "arch_mirror",
+          "plane": "yz",
+          "offset": "gantry_span / 2",
+          "combine": true
+        },
+        {
+          "op": "sketch",
+          "id": "anchor_sk",
+          "plane": "xz",
+          "offset": "-12 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": ["75 mm", "leg_h + 43 mm"], "width": "16 mm", "height": "6 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "anchor_slot", "sketch": "anchor_sk", "distance": "24 mm", "mode": "cut"},
+        {
+          "op": "mirror",
+          "id": "anchor_slot_mirror",
+          "feature": "anchor_slot",
+          "plane": "yz",
+          "offset": "gantry_span / 2"
+        },
+        {
+          "op": "bolt_hole",
+          "id": "arch_clamp_hole",
+          "size": "M3",
+          "plane": "xy",
+          "offset": "leg_h + 50 mm",
+          "center": ["50 mm", 0],
+          "depth": "-14 mm",
+          "screw": {"length": 8, "head": "button", "nut": "insert"}
+        },
+        {
+          "op": "linear_pattern",
+          "id": "arch_clamp_holes",
+          "feature": "arch_clamp_hole",
+          "direction": "x",
+          "quantity": 5,
+          "distance": "50 mm"
+        },
+        {
+          "op": "bolt_hole",
+          "id": "arch_end_bolts",
+          "size": "M5",
+          "plane": "xy",
+          "offset": "leg_h + 12 mm",
+          "depth": "-12 mm",
+          "head": "counterbore",
+          "points": [["-10 mm", 0], ["gantry_span + 10 mm", 0]],
+          "screw": {"length": 16, "nut": "none", "washer": true}
+        }
+      ]
+    },
+    {
+      "id": "x_carriage",
+      "name": "X-Carriage Saddle & Spindle Clamp",
+      "material": "6061-T6 Aluminium",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "saddle_sk",
+          "plane": "xz",
+          "offset": "23 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "beam_z"], "width": "saddle_w", "height": "74 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "saddle_plate", "sketch": "saddle_sk", "distance": "saddle_t", "mode": "new_body"},
+        {
+          "op": "fillet",
+          "id": "saddle_corners",
+          "radius": "5 mm",
+          "edges": {"feature": "saddle_plate", "type": "line", "direction": "y"}
+        },
+        {
+          "op": "bolt_hole",
+          "id": "xs_carriage_bolts",
+          "size": "M3",
+          "plane": "xz",
+          "offset": "23 mm + saddle_t",
+          "depth": "-saddle_t",
+          "head": "counterbore",
+          "points": [
+            ["-40 mm", "110 mm"], ["-20 mm", "110 mm"], ["20 mm", "110 mm"], ["40 mm", "110 mm"],
+            ["-40 mm", "130 mm"], ["40 mm", "130 mm"],
+            ["-40 mm", "150 mm"], ["40 mm", "150 mm"],
+            ["-40 mm", "170 mm"], ["-20 mm", "170 mm"], ["20 mm", "170 mm"], ["40 mm", "170 mm"]
+          ],
+          "screw": {"length": 12}
+        },
+        {
+          "op": "sketch",
+          "id": "bridge_sk",
+          "plane": "xy",
+          "offset": "175 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "-13.5 mm"], "width": "48 mm", "height": "93 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "top_bridge", "sketch": "bridge_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "vent_grid",
+          "id": "xs_vent",
+          "plane": "xy",
+          "offset": "183 mm",
+          "center": [0, "-10 mm"],
+          "width": "36 mm",
+          "height": "24 mm",
+          "hole": "hexagon",
+          "size": "6 mm",
+          "wall": "2 mm",
+          "depth": "-8 mm"
+        },
+        {
+          "op": "sketch",
+          "id": "probe_sk",
+          "plane": "xy",
+          "offset": "183 mm",
+          "entities": [
+            {"type": "circle", "center": [0, "18 mm"], "diameter": "6 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "probe_hole", "sketch": "probe_sk", "distance": "-8 mm", "mode": "cut"},
+        {
+          "op": "thread",
+          "id": "probe_thread",
+          "feature": "probe_hole",
+          "target": "internal",
+          "designation": "M6x1",
+          "modeled": true
+        },
+        {
+          "op": "sketch",
+          "id": "nut_web_sk",
+          "plane": "yz",
+          "offset": "-8 mm",
+          "entities": [
+            {"type": "center_rectangle", "center": ["screw_y", "beam_z + 17 mm"], "width": "30 mm", "height": "52 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "nut_web", "sketch": "nut_web_sk", "distance": "8 mm", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "nut_bore_sk",
+          "plane": "yz",
+          "offset": "-8 mm",
+          "entities": [
+            {"type": "circle", "center": ["screw_y", "beam_z"], "diameter": "11 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "nut_bore", "sketch": "nut_bore_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "xs_nut_bolts",
+          "size": "M3",
+          "plane": "yz",
+          "offset": "-8 mm",
+          "depth": "8 mm",
+          "points": [
+            ["screw_y - 8 mm", "beam_z"],
+            ["screw_y + 8 mm", "beam_z"],
+            ["screw_y", "beam_z - 8 mm"],
+            ["screw_y", "beam_z + 8 mm"]
+          ],
+          "screw": {"length": 14, "nut": "nyloc"}
+        },
+        {
+          "op": "sketch",
+          "id": "clamp_sk",
+          "plane": "xy",
+          "offset": "beam_z - clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "69.5 mm"], "width": "68 mm", "height": "73 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "clamp_block", "sketch": "clamp_sk", "distance": "clamp_len", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "pinch_sk",
+          "plane": "xy",
+          "offset": "beam_z - clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "109 mm"], "width": "22 mm", "height": "20 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "pinch_lug", "sketch": "pinch_sk", "distance": "clamp_len", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "clamp_gusset_sk",
+          "plane": "yz",
+          "offset": "26 mm",
+          "entities": [
+            {"type": "polygon", "points": [["33 mm", "104 mm"], ["68 mm", "124 mm"], ["33 mm", "124 mm"]]}
+          ]
+        },
+        {"op": "extrude", "id": "clamp_gusset", "sketch": "clamp_gusset_sk", "distance": "6 mm", "mode": "join"},
+        {"op": "mirror", "id": "clamp_gusset_sym", "feature": "clamp_gusset", "plane": "yz"},
+        {
+          "op": "sketch",
+          "id": "clamp_bore_sk",
+          "plane": "xy",
+          "offset": "beam_z - clamp_len / 2",
+          "entities": [
+            {"type": "circle", "center": [0, "spindle_y"], "diameter": "spindle_d"}
+          ]
+        },
+        {"op": "extrude", "id": "clamp_bore", "sketch": "clamp_bore_sk", "distance": "clamp_len", "mode": "cut"},
+        {
+          "op": "chamfer",
+          "id": "clamp_chamfer",
+          "distance": "1 mm",
+          "edges": {"feature": "clamp_bore", "type": "circle"}
+        },
+        {
+          "op": "sketch",
+          "id": "slit_sk",
+          "plane": "xy",
+          "offset": "beam_z - clamp_len / 2",
+          "entities": [
+            {"type": "center_rectangle", "center": [0, "108 mm"], "width": "3 mm", "height": "26 mm"}
+          ]
+        },
+        {"op": "extrude", "id": "slit_cut", "sketch": "slit_sk", "distance": "clamp_len", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "xs_clamp_bolts",
+          "size": "M5",
+          "plane": "yz",
+          "offset": "-11 mm",
+          "depth": "22 mm",
+          "head": "counterbore",
+          "points": [["110 mm", "beam_z - 7 mm"], ["110 mm", "beam_z + 7 mm"]],
+          "screw": {"length": 25, "nut": "hex", "washer": true}
+        }
+      ]
+    },
+    {
+      "id": "dust_manifold",
+      "name": "Swept-Spline Vacuum Dust Shoe",
+      "material": "Carbon-Fiber PETG",
+      "timeline": [
+        {
+          "op": "sketch",
+          "id": "shroud_sk",
+          "plane": "xy",
+          "entities": [
+            {
+              "type": "profile",
+              "start": [0, "-28 mm"],
+              "segments": [
+                {"to": ["28 mm", 0], "through": ["19.8 mm", "-19.8 mm"]},
+                {"to": ["19 mm", "64 mm"], "spline": [["26 mm", "24 mm"], ["21 mm", "46 mm"]]},
+                {"to": [0, "83 mm"], "through": ["13.4 mm", "77.4 mm"]},
+                {"to": [0, "-28 mm"]}
+              ]
+            }
+          ]
+        },
+        {"op": "extrude", "id": "shroud_half", "sketch": "shroud_sk", "distance": "8 mm", "mode": "new_body"},
+        {"op": "mirror", "id": "shroud_sym", "plane": "yz", "combine": true},
+        {
+          "op": "sketch",
+          "id": "collet_bore_sk",
+          "plane": "xy",
+          "entities": [{"type": "circle", "center": [0, 0], "diameter": "34 mm"}]
+        },
+        {"op": "extrude", "id": "collet_bore", "sketch": "collet_bore_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "sketch",
+          "id": "intake_sk",
+          "plane": "xy",
+          "entities": [{"type": "circle", "center": [0, "64 mm"], "diameter": "duct_id"}]
+        },
+        {"op": "extrude", "id": "intake_cut", "sketch": "intake_sk", "distance": "8 mm", "mode": "cut"},
+        {
+          "op": "sketch",
+          "id": "duct_path_sk",
+          "plane": "yz",
+          "entities": [
+            {
+              "type": "spline",
+              "points": [["64 mm", "6 mm"], ["72 mm", "28 mm"], ["84 mm", "56 mm"], ["90 mm", "84 mm"]],
+              "closed": false
+            }
+          ]
+        },
+        {
+          "op": "sketch",
+          "id": "duct_outer_sk",
+          "plane": "xy",
+          "offset": "6 mm",
+          "entities": [{"type": "circle", "center": [0, "64 mm"], "diameter": "duct_od"}]
+        },
+        {"op": "sweep", "id": "duct_outer", "sketch": "duct_outer_sk", "path": "duct_path_sk", "mode": "join"},
+        {
+          "op": "sketch",
+          "id": "duct_inner_sk",
+          "plane": "xy",
+          "offset": "6 mm",
+          "entities": [{"type": "circle", "center": [0, "64 mm"], "diameter": "duct_id"}]
+        },
+        {"op": "sweep", "id": "duct_inner", "sketch": "duct_inner_sk", "path": "duct_path_sk", "mode": "cut"},
+        {
+          "op": "bolt_hole",
+          "id": "shoe_mount_bolts",
+          "size": "M4",
+          "plane": "xy",
+          "offset": "8 mm",
+          "depth": "-8 mm",
+          "points": [["-16 mm", "24 mm"], ["16 mm", "24 mm"]],
+          "screw": {"length": 14, "nut": "insert"}
+        }
+      ],
+      "bom": [
+        {"category": "Consumables", "item": "70 mm nylon dust-shoe brush strip", "unit": "m", "qty": "320 mm", "round": 0.5},
+        {"category": "Hardware", "item": "6x3 mm N52 neodymium magnet", "qty": 4}
+      ]
+    }
+  ],
+  "instances": [
+    {"component": "gantry_beam", "id": "beam_inst", "position": [0, 0, 0]},
+    {"component": "frame_leg", "id": "leg_left", "position": ["-10 mm", 0, 0]},
+    {"component": "frame_leg", "id": "leg_right", "position": ["gantry_span + 10 mm", 0, 0]},
+    {"component": "upright_cheek", "id": "cheek_left", "position": ["-20 mm - cheek_t", 0, 0]},
+    {
+      "component": "upright_cheek",
+      "id": "cheek_right",
+      "rotate": [{"axis": "z", "angle": "180 deg"}],
+      "position": ["gantry_span + 20 mm + cheek_t", 0, 0]
+    },
+    {"component": "kp08_bracket", "id": "kp_bracket_left", "position": ["34 mm", "-10 mm", "beam_z - 15 mm"]},
+    {"component": "kp08_bracket", "id": "kp_bracket_right", "position": ["gantry_span - 34 mm", "-10 mm", "beam_z - 15 mm"]},
+    {
+      "component": "bearing",
+      "id": "kp08_left",
+      "rotate": [{"axis": "z", "angle": "90 deg"}],
+      "position": ["34 mm", "screw_y", "beam_z - 15 mm"]
+    },
+    {
+      "component": "bearing",
+      "id": "kp08_right",
+      "rotate": [{"axis": "z", "angle": "90 deg"}],
+      "position": ["gantry_span - 34 mm", "screw_y", "beam_z - 15 mm"]
+    },
+    {
+      "component": "rail",
+      "id": "rail_top",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": [0, "10 mm", "beam_z + 20 mm"]
+    },
+    {
+      "component": "rail",
+      "id": "rail_bot",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": [0, "10 mm", "beam_z - 20 mm"]
+    },
+    {
+      "component": "carriage",
+      "id": "car_tl",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": ["carr_x - carr_pitch / 2", "10 mm", "beam_z + 20 mm"]
+    },
+    {
+      "component": "carriage",
+      "id": "car_tr",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": ["carr_x + carr_pitch / 2", "10 mm", "beam_z + 20 mm"]
+    },
+    {
+      "component": "carriage",
+      "id": "car_bl",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": ["carr_x - carr_pitch / 2", "10 mm", "beam_z - 20 mm"]
+    },
+    {
+      "component": "carriage",
+      "id": "car_br",
+      "rotate": [{"axis": "x", "angle": "-90 deg"}],
+      "position": ["carr_x + carr_pitch / 2", "10 mm", "beam_z - 20 mm"]
+    },
+    {"component": "motor_bracket", "id": "motor_bracket_inst", "position": [0, 0, 0]},
+    {
+      "component": "motor",
+      "id": "motor_inst",
+      "rotate": [{"axis": "y", "angle": "90 deg"}],
+      "position": ["-58 mm", "screw_y", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2"]
+    },
+    {
+      "component": "pinion_gear",
+      "id": "pinion_inst",
+      "rotate": [{"axis": "y", "angle": "90 deg"}],
+      "position": ["-50 mm", "screw_y", "beam_z + gear_mod * (pinion_teeth + gear_teeth) / 2"]
+    },
+    {
+      "component": "driven_gear",
+      "id": "driven_gear_inst",
+      "rotate": [{"axis": "y", "angle": "90 deg"}],
+      "position": ["-50 mm", "screw_y", "beam_z"]
+    },
+    {
+      "component": "screw",
+      "id": "screw_inst",
+      "rotate": [{"axis": "y", "angle": "90 deg"}],
+      "position": ["-50 mm", "screw_y", "beam_z"]
+    },
+    {
+      "component": "nut",
+      "id": "nut_inst",
+      "rotate": [{"axis": "y", "angle": "90 deg"}],
+      "position": ["carr_x", "screw_y", "beam_z"]
+    },
+    {"component": "cable_bridge", "id": "cable_bridge_inst", "position": [0, 0, 0]},
+    {"component": "x_carriage", "id": "x_carriage_inst", "position": ["carr_x", 0, 0]},
+    {"component": "spindle", "id": "spindle_inst", "position": ["carr_x", "spindle_y", "spindle_z"]},
+    {"component": "dust_manifold", "id": "dust_manifold_inst", "position": ["carr_x", "spindle_y", "spindle_z - 16 mm"]}
+  ],
+  "bom": [
+    {"category": "Electronics", "item": "48 V 400 W spindle power supply & PWM governor", "qty": 1},
+    {"category": "Electronics", "item": "NPN inductive X-home limit switch (SN04-N)", "qty": 2},
+    {"category": "Wiring", "item": "4-core 18 AWG shielded drag-chain cable", "unit": "m", "qty": "gantry_span * 2 + 900 mm", "round": 0.5}
+  ]
+}

@@ -26,7 +26,7 @@ Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, Vib
 * **Chats Saved in Your Design**: Conversations are stored inside the Fusion document, so you can reopen a file later and keep refining it.
 * **Real Parametric B-Rep History**: Builds native Fusion 360 features organized in clean timeline groups.
 * **Fully Constrained Sketches**: Sketches evaluate to fully constrained (black curves, padlock icon in browser tree) with automated geometric constraints and driving dimensions.
-* **Pluggable Provider Architecture**: Zero vendor lock-in. Switch seamlessly between local Ollama (Qwen 2.5 Coder, DeepSeek, Llama) and Cloud AI (Google Gemini, etc.). Adding a new provider is as simple as dropping a Python file into `providers/`.
+* **Pluggable Provider Architecture**: Zero vendor lock-in. Switch seamlessly between local Ollama (Qwen 3.6, DeepSeek, Llama) and Cloud AI (Google Gemini, etc.). Adding a new provider is as simple as dropping a Python file into `providers/`.
 * **Self-Healing Solver Loop**: If Fusion's CAD kernel encounters an error (e.g., self-intersecting sweep or invalid face selection), Fusion automatically rolls back the transaction, sends the exact traceback to the model, and retries.
 * **Real-Time Streaming & Thought Inspection**: Watch the model's reasoning live in the panel, and stop at any time with **⏹** or **Esc**.
 * **Open & Declarative JSON DSL**: Uses an inspectable, human-readable CAD timeline DSL documented in [`DSL_SPEC.md`](DSL_SPEC.md).
@@ -102,17 +102,15 @@ VibeShaper keeps your settings (including API keys) and its logs in your user fo
 * Your prompts, the chat history and, for models that use tools, details of your open design are sent to the provider you pick. With Ollama, everything stays on your computer.
 * Chats are saved **inside the design**, so they travel with it: anyone you share the design or an exported `.f3d` with can read the whole conversation. Delete a chat from the title menu before sharing if you'd rather not. Earlier saved versions of the design in Fusion's version history still contain it. API keys are never stored in designs.
 
-### Using Local Ollama (Recommended for Privacy)
-1. Install [Ollama](https://ollama.ai) and pull a coding/reasoning model:
+### Using Local Ollama
+1. Install [Ollama](https://ollama.ai) and pull a strong coding/reasoning model:
    ```bash
-   ollama run qwen2.5-coder:7b
-   # or for reasoning:
-   ollama run qwen3.8:latest
+   ollama run qwen3.6
    ```
 2. In VibeShaper:
    - Open **Settings → Ollama** and set **Ollama URL** (default `http://localhost:11434`). Click **Test connection**.
    - Pick your model from the model menu.
-   - For models that can reason (e.g. `qwen3`), turn on **Think before answering** in the model menu.
+   - For models that can reason (e.g. `qwen3.6`), turn on **Think before answering** in the model menu.
 
 ### Using Google Gemini
 1. Obtain an API key from [Google AI Studio](https://aistudio.google.com).
@@ -208,7 +206,7 @@ Messages are plain dictionaries in one format for all providers (see `providers/
 To try a provider without Fusion:
 
 ```bash
-python llm.py --provider ollama --model qwen3:8b --set url=http://localhost:11434 --think "a 40 mm cube with a 10 mm hole"
+python llm.py --provider ollama --model qwen3.6 --set url=http://localhost:11434 --think "a 40 mm cube with a 10 mm hole"
 ```
 
 ### Adding Tools

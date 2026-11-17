@@ -7,9 +7,20 @@ import tempfile
 # Settings and logs go to a throwaway folder, never the user's real ones
 os.environ['VIBESHAPER_HOME'] = tempfile.mkdtemp(prefix='vibeshaper-test-')
 
-from dsl import validate
+from dsl import sync_spec, validate
+import features as _spec_feats
+import shapes as _spec_shapes
 
 here = pathlib.Path(__file__).parent
+_spec_md = sync_spec(here / 'DSL_SPEC.md')
+assert 'see `shapes/`' not in _spec_md
+for _e in _spec_feats.entities.get_all_entities():
+    assert f'(`{_e.type}`)' in _spec_md and all(f'`{k}`' in _spec_md for k in _e.schema), _e.type
+for _f in _spec_feats.get_all_features():
+    assert f'### 5.' in _spec_md and f'`{_f.op}` ({_f.name})' in _spec_md, _f.op
+for _s in _spec_shapes.get_all_shapes():
+    assert f'#### `{_s.op}` — {_s.name}' in _spec_md and _s.prompt.strip() in _spec_md, _s.op
+
 validate(json.loads((here / 'sample.json').read_text()))
 for ex_file in (here / 'examples').glob('*.json'):
     validate(json.loads(ex_file.read_text()))
@@ -583,6 +594,15 @@ assert sk['on'] == 'XY' and sk['profiles'] == 2 and sk['constraints'] == 3 and s
 assert sk['curves']['items'] == [{'type': 'line', 'start': [0.0, 0.0, 0.0], 'end': [40.0, 0.0, 0.0]},
                                  {'type': 'circle', 'center': [10.0, 10.0, 0.0], 'diameter': 6.0}]
 assert sk['dimensions'] == [{'name': 'd1', 'expression': '6 mm'}]
+FF.sketch.sketchCurves.sketchFittedSplines = _Coll([
+    _NS(fitPoints=_Coll([_NS(geometry=_P(0, 0, 0)), _NS(geometry=_P(2, 1, 0))]), isClosed=True, isConstruction=False),
+    _NS(fitPoints=_Coll([_NS(geometry=_P(1, 0, 0)), _NS(geometry=_P(3, 2, 0))]), isClosed=False, isConstruction=True),
+])
+assert R('get_sketch', id=sk_id)['curves']['items'][2:] == [
+    {'type': 'spline', 'points': [[0.0, 0.0, 0.0], [20.0, 10.0, 0.0]], 'closed': True},
+    {'type': 'spline', 'points': [[10.0, 0.0, 0.0], [30.0, 20.0, 0.0]], 'construction': True},
+]
+FF.sketch.sketchCurves.sketchFittedSplines = _Coll()
 
 tl = R('get_timeline')
 assert [i['type'] for i in tl['items']] == ['Sketch', 'Extrude', 'Occurrence', 'Extrude'], tl
@@ -842,8 +862,13 @@ assert matched[0].geometry is vert_line
 class MockObjectCollection:
     def __init__(self):
         self.items = []
+    @classmethod
+    def create(cls):
+        return cls()
     def add(self, item):
         self.items.append(item)
+    def item(self, k):
+        return self.items[k]
     @property
     def count(self):
         return len(self.items)
@@ -947,10 +972,29 @@ class MockSKLinesList:
     def item(self, k):
         return self._lines[k]
 
+class MockFitPts:
+    def __init__(self, pts):
+        self._pts = pts
+        self.count = len(pts)
+    def item(self, k):
+        return self._pts[k]
+
+class MockSKFittedSpline:
+    def __init__(self, coll):
+        pts = [p if isinstance(p, MockSKPt) else MockSKPt(p.x, p.y) for p in coll.items]
+        self._pts = pts
+        self.fitPoints = MockFitPts(pts)
+        self.startSketchPoint = pts[0]
+        self.endSketchPoint = pts[-1]
+        self.isClosed = False
+        self.isFixed = False
+        self.isConstruction = False
+
 class MockSKCurves:
     def __init__(self):
         self.lines_list = []
         self.circles_list = []
+        self.splines_list = []
         class LinesHelper:
             def __init__(self, outer): self.outer = outer
             def addByTwoPoints(self, p1, p2):
@@ -978,14 +1022,21 @@ class MockSKCurves:
                 circ = MockSKCircle(c, r)
                 self.outer.circles_list.append(circ)
                 return circ
+        class SplinesHelper:
+            def __init__(self, outer): self.outer = outer
+            def add(self, coll):
+                sp = MockSKFittedSpline(coll)
+                self.outer.splines_list.append(sp)
+                return sp
         self.sketchLines = LinesHelper(self)
         self.sketchCircles = CirclesHelper(self)
+        self.sketchFittedSplines = SplinesHelper(self)
 
     @property
     def count(self):
-        return len(self.lines_list) + len(self.circles_list)
+        return len(self.lines_list) + len(self.circles_list) + len(getattr(self, 'arcs_list', [])) + len(self.splines_list)
     def item(self, k):
-        all_curves = self.lines_list + self.circles_list
+        all_curves = self.lines_list + self.circles_list + getattr(self, 'arcs_list', []) + self.splines_list
         return all_curves[k]
 
 class MockSKPoints:
@@ -1021,6 +1072,7 @@ mock_fusion.DimensionOrientations = MockDimOrientations
 mock_adsk.fusion = mock_fusion
 sys.modules['adsk.fusion'] = mock_fusion
 mock_core.Point3D = MockPoint3D
+mock_core.ObjectCollection = MockObjectCollection
 
 def dummy_cm(v):
     if isinstance(v, (int, float)): return float(v) / 10.0
@@ -1271,57 +1323,79 @@ validate({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "x
 _fails({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
     {"type": "profile", "start": [0, 0], "segments": [{"through": [1, 1]}]}]}]}, 'missing to')
 
-# Test 5f2: mirror = copies of earlier entities across a construction line, tied by symmetry
-import math
+# Test 5f2: spline entity, profile spline segments, and 3D mirror offset/target validation
 from dsl import JSON_SCHEMA
-sk5m = MockSketchObj()
-sk5m.sketchCurves.arcs_list = []
+_ent_enum = JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items']['properties']['type']['enum']
+assert 'spline' in _ent_enum and 'mirror' not in _ent_enum
+
+sk5s = MockSketchObj()
 _ents = {}
-for _e in [{"type": "profile", "id": "half", "closed": False, "start": [0, 0], "segments": [
-               {"to": [30, 0]}, {"to": [40, 10], "through": [30 + 10 * math.sin(math.pi / 4), 10 - 10 * math.cos(math.pi / 4)]},
-               {"to": [40, 20]}, {"to": [0, 20]}]},
-           {"type": "circle", "id": "hole", "center": [20, 10], "diameter": 6},
-           {"type": "circle", "id": "middle", "center": [0, 10], "diameter": 4},
-           {"type": "mirror", "id": "whole", "entities": ["half", "hole", "middle"], "line": [[0, -10], [0, 30]]}]:
-    _draw(sk5m, _e, dummy_ex, dummy_cm, dummy_pt, _ents)
-_lines, _arcs5, _circs = sk5m.sketchCurves.lines_list, sk5m.sketchCurves.arcs_list, sk5m.sketchCurves.circles_list
-_axis = next(l for l in _lines if l.isConstruction)
-assert len(_lines) == 3 + 1 + 3 and len(_arcs5) == 2 and len(_circs) == 2 + 1   # the middle circle is its own mirror
-assert len(_ents['whole']) == 6 + 5
-_xy = lambda p: (round(p.geometry.x, 6), round(p.geometry.y, 6))
-_copies = _ents['whole'][6:]
-assert _xy(_copies[0].startSketchPoint) == (0, 0) and _xy(_copies[0].endSketchPoint) == (-3, 0)
-assert _copies[0].startSketchPoint is _ents['half'][0].startSketchPoint  # on the line: shared, so the halves join
-assert _xy(_copies[-1].centerSketchPoint) == (-2, 1)
-_sym = _kinds(sk5m, 'symmetry')
-assert len(_sym) == 4 and all(c[3] is _axis for c in _sym)          # one per point off the line: 30,0 40,10 40,20 20,10
-assert sorted(_xy(c[2]) for c in _sym) == [(-4, 1), (-4, 2), (-3, 0), (-2, 1)]
-assert len(_kinds(sk5m, 'equal')) == 2                               # the arc and the circle keep their size
-_new_lines = _copies[0:1] + _copies[2:4]
-assert _new_lines[1].startSketchPoint in [p for a in _arcs5[1:] for p in (a.startSketchPoint, a.endSketchPoint)] \
-    or any(c[1] is _new_lines[1].startSketchPoint for c in _kinds(sk5m, 'coincident'))
-assert _new_lines[1].endSketchPoint is _new_lines[2].startSketchPoint   # a shared corner gets one mirrored point
-assert _new_lines[2].endSketchPoint is _ents['half'][3].endSketchPoint  # ...and the other end is on the line
-# A copy that comes out looser than its fully constrained original gets the curves tied too
-from features.entities.mirror import _mirror_curves
-sk5n = MockSketchObj()
+_draw(sk5s, {"type": "spline", "id": "sp1", "points": [[0, 0], [10, 15], [30, 5], [40, 0]], "closed": False},
+      dummy_ex, dummy_cm, dummy_pt, _ents)
+assert len(sk5s.sketchCurves.splines_list) == 1
+_sp = sk5s.sketchCurves.splines_list[0]
+assert _sp.isClosed is False and not _sp.isFixed
+assert _sp.fitPoints.count == 4
+assert _ents['sp1'] is _sp and _ents['sp1.start'] is _sp.startSketchPoint and _ents['sp1.end'] is _sp.endSketchPoint
+assert len([d for d in sk5s.sketchDimensions.dims if d[0] == 'distance']) == 5  # origin coincident, end aligned y=0 -> 5 distance dims
+assert _kinds(sk5s, 'horizontal_points') and _kinds(sk5s, 'coincident')
+
+sk5c = MockSketchObj()
 _ents = {}
-for _e in [{"type": "polyline", "id": "p", "points": [[10, 0], [20, 0], [20, 10]]},
-           {"type": "line", "id": "ax", "start": [0, -10], "end": [0, 30]}]:
-    _draw(sk5n, _e, dummy_ex, dummy_cm, dummy_pt, _ents)
-_src = list(_ents['p'])
-_src[0].isFullyConstrained = True                     # the second line stays loose like its copy
-_made = _mirror_curves(sk5n, _src, _ents['ax'])
-_curve_sym = [c for c in _kinds(sk5n, 'symmetry') if c[1] in _src]
-assert len(_made) == 2 and len(_curve_sym) == 1 and _curve_sym[0][1:] == (_src[0], _made[0], _ents['ax'])
-_mv = lambda **kw: {"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
-    {"type": "polyline", "id": "p", "points": [[0, 0], [10, 0], [10, 10]]}, dict({"type": "mirror"}, **kw)]}]}
-validate(_mv(entities=["p"], line=[[0, 0], [0, 1]]))
-_fails(_mv(entities=["q"], line=[[0, 0], [0, 1]]), 'not an entity id defined earlier')
-_fails(_mv(entities=["p"], line=[[0, 0]]), 'line must be two points')
-_fails(_mv(entities=[], line=[[0, 0], [0, 1]]), 'non-empty list')
-assert 'mirror' in JSON_SCHEMA['properties']['timeline']['items']['properties']['entities']['items'][
-    'properties']['type']['enum']
+_draw(sk5c, {"type": "spline", "id": "sp2", "points": [[0, 10], [20, 0], [0, -10], [-20, 0], [0, 10]], "closed": True},
+      dummy_ex, dummy_cm, dummy_pt, _ents)
+assert len(sk5c.sketchCurves.splines_list) == 1
+_spc = sk5c.sketchCurves.splines_list[0]
+assert _spc.isClosed is True and _spc.fitPoints.count == 4  # duplicate closing point dropped
+assert _ents['sp2'] is _spc and 'sp2.start' not in _ents
+
+_sv = lambda **kw: {"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy",
+                                                   "entities": [dict({"type": "spline"}, **kw)]}]}
+validate(_sv(points=[[0, 0], [10, 10]]))
+validate(_sv(points=[[0, 0], [10, 10], [20, 0]], closed=True))
+_fails(_sv(points=[[0, 0]]), 'at least 2 points')
+_fails(_sv(points=[[0, 0], [10, 10]], closed=True), 'at least 3 points')
+_fails(_sv(points=[[0, 0], [10, 10]], closed='yes'), 'true or false')
+
+# Profile mixing line, arc, and spline segments
+sk5p = MockSketchObj()
+sk5p.sketchCurves.arcs_list = []
+_ents = {}
+_foil = {"type": "profile", "id": "foil", "start": [0, 0], "segments": [
+    {"to": [50, 0]},
+    {"to": [40, 15], "through": [48, 8]},
+    {"to": [0, 0], "spline": [[25, 18], [10, 10]]},
+]}
+_draw(sk5p, _foil, dummy_ex, dummy_cm, dummy_pt, _ents)
+assert len(sk5p.sketchCurves.lines_list) == 1 and len(sk5p.sketchCurves.arcs_list) == 1 and len(sk5p.sketchCurves.splines_list) == 1
+_fsp = sk5p.sketchCurves.splines_list[0]
+assert _fsp.fitPoints.count == 4
+assert _fsp.startSketchPoint in (sk5p.sketchCurves.arcs_list[0].startSketchPoint, sk5p.sketchCurves.arcs_list[0].endSketchPoint)
+assert _fsp.endSketchPoint is sk5p.sketchCurves.lines_list[0].startSketchPoint
+assert len([d for d in sk5p.sketchDimensions.dims if d[0] == 'distance']) == 9  # [50,0] x (1) + [40,15] (2) + [48,8] (2) + 2 spline pts (4)
+validate({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [_foil]}]})
+_fails({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
+    {"type": "profile", "start": [0, 0], "segments": [{"to": [10, 0], "spline": []}]}]}]}, 'non-empty list')
+_fails({"parameters": {}, "timeline": [{"op": "sketch", "id": "s", "plane": "xy", "entities": [
+    {"type": "profile", "start": [0, 0], "segments": [{"to": [10, 0], "through": [5, 5], "spline": [[3, 2]]}]}]}]},
+       'both through and spline')
+
+# 3D mirror with offset and target validation
+validate({"parameters": {"off": "20 mm"}, "timeline": [
+    {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "center_rectangle", "center": ["off", 0], "width": 10, "height": 10}]},
+    {"op": "extrude", "id": "b", "sketch": "s", "distance": 10},
+    {"op": "mirror", "target": "b", "plane": "yz", "offset": "off", "combine": True},
+]})
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]},
+    {"op": "extrude", "id": "b", "sketch": "s", "distance": 10},
+    {"op": "mirror", "plane": "top", "offset": 5},
+]}, 'base plane')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]},
+    {"op": "extrude", "id": "b", "sketch": "s", "distance": 10},
+    {"op": "mirror", "feature": "b", "target": "b", "plane": "yz"},
+]}, 'either feature or target')
 
 # Test 5f3: assemblies. Components have their own timelines (own sketch ids); instances place copies
 import copy as _copy
@@ -1799,53 +1873,40 @@ def _crosses(p, q, r, s):
 
 
 def _sketch_loops(entities, ev):
-    """What a sketch draws, numerically: its curves (mirror entities copying the curves they
-    name, the way _mirror_curves does), chained into closed loops. Arcs become two chords through
-    their middle point; circles 64-gons."""
+    """What a sketch draws, numerically: its curves chained into closed loops. Arcs and splines
+    become chords through their fit/middle points; circles 64-gons."""
     def P(q):
         return (ev(q[0]), ev(q[1]))
-    ids, curves = {}, []
+    curves = []
     for e in entities:
         t = e['type']
         if t == 'profile':
             cur, out = P(e['start']), []
             for sg in e['segments']:
                 b = P(sg['to'])
-                out.append([cur, P(sg['through']), b] if 'through' in sg else [cur, b])
+                if 'through' in sg:
+                    out.append([cur, P(sg['through']), b])
+                elif 'spline' in sg:
+                    out.append([cur] + [P(p) for p in sg['spline']] + [b])
+                else:
+                    out.append([cur, b])
                 cur = b
             if e.get('closed', True) and math.dist(cur, P(e['start'])) > 1e-9:
                 out.append([cur, P(e['start'])])
+        elif t == 'spline':
+            pts = [P(p) for p in e['points']]
+            if e.get('closed') and len(pts) > 3 and math.dist(pts[-1], pts[0]) < 1e-9:
+                pts.pop()
+            out = [[pts[k], pts[(k + 1) % len(pts)]] for k in range(len(pts) if e.get('closed') else len(pts) - 1)]
         elif t == 'circle':
             out = [('circle', P(e['center']), ev(e['diameter']) / 2)]
         elif t == 'center_rectangle':
             (cx, cy), w, h = P(e['center']), ev(e['width']) / 2, ev(e['height']) / 2
             c = [(cx - w, cy - h), (cx + w, cy - h), (cx + w, cy + h), (cx - w, cy + h)]
             out = [[c[i], c[(i + 1) % 4]] for i in range(4)]
-        else:  # mirror
-            (ax, ay), (bx, by) = P(e['line'][0]), P(e['line'][1])
-            dx, dy = bx - ax, by - ay
-
-            def rf(p):
-                f = ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)
-                return (2 * (ax + f * dx) - p[0], 2 * (ay + f * dy) - p[1])
-
-            def on(p):
-                return abs((p[0] - ax) * dy - (p[1] - ay) * dx) / math.hypot(dx, dy) < 1e-9
-            src = [c for r in e['entities'] for c in ids[r]]
-            out = []
-            for c in src:
-                if c[0] == 'circle':
-                    if not on(c[1]):
-                        out.append(('circle', rf(c[1]), c[2]))
-                elif not all(on(p) for p in c) and not (len(c) == 3 and on(c[1]) and math.dist(rf(c[0]), c[2]) < 1e-9):
-                    out.append([rf(p) for p in c])
-            curves += out
-            if 'id' in e:
-                ids[e['id']] = src + out
+        else:
             continue
         curves += out
-        if 'id' in e:
-            ids[e['id']] = out
     loops, chains = [], []
     for c in curves:
         if c[0] == 'circle':
@@ -1893,57 +1954,57 @@ def _has(pts, x, y):
     return any(abs(p[0] - x) < 1e-6 and abs(p[1] - y) < 1e-6 for p in pts)
 
 
-# T-slot profiles: the sketch draws 1/8 (square) or 1/4 (2040 and longer) and mirrors it. Mirrored,
-# it is one simple outline (counter-clockwise, the right size) with every bore, corner hole and
-# hollow between cells inside it.
+# T-slot profiles: the sketch draws the bottom-right quadrant closed along the center lines, cuts
+# quadrant holes, and mirrors across both symmetry planes in 3D.
 for _series, (_w, _h, _corner) in {'2020': (20, 20, 0), '2040': (20, 40, 0), '2060': (20, 60, 0),
                                    '3030': (30, 30, 4), '4040': (40, 40, 4), '4080': (40, 80, 4)}.items():
     _x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series=_series, length=100)
     _ents = _by['t_sk']['entities']
-    _drawn = [_ev(c) for e in _ents if e['type'] == 'profile' for sg in e['segments'] for c in sg['to']]
-    assert all(x > -1e-9 for x in _drawn[0::2])                       # only right of the center line...
-    if _w == _h:
-        assert all(y <= -x + 1e-9 for x, y in zip(_drawn[0::2], _drawn[1::2]))  # ...and below the diagonal
-        assert [e['type'] for e in _ents] == ['profile', 'mirror', 'mirror', 'mirror']
-    else:
-        assert all(y < 1e-9 for y in _drawn[1::2])                    # ...and below the middle
+    assert [e['type'] for e in _ents] == ['profile'] and _ents[0]['closed'] is True
+    _drawn = [_ev(c) for sg in _ents[0]['segments'] for c in sg['to']]
+    assert all(x > -1e-9 for x in _drawn[0::2])                       # only right of the vertical center line
+    assert all(y < 1e-9 for y in _drawn[1::2])                        # and below the horizontal center line
     _outs = _sketch_loops(_ents, _ev)
     assert len(_outs) == 1
     _out = _outs[0]
     assert _simple(_out)
-    assert abs(max(p[0] for p in _out) * 2 - _w) < 1e-9 and abs(max(p[1] for p in _out) * 2 - _h) < 1e-9
+    assert abs(max(p[0] for p in _out) * 2 - _w) < 1e-9 and abs(-min(p[1] for p in _out) * 2 - _h) < 1e-9
+    assert abs(min(p[0] for p in _out)) < 1e-9 and abs(max(p[1] for p in _out)) < 1e-9
     _segs = list(zip(_out, _out[1:] + _out[:1]))
-    assert 0 < abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in _segs)) / 2 < _w * _h
+    assert 0 < abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in _segs)) / 2 < (_w * _h) / 4
     _cells = _h // _w
     _holes = _sketch_loops(_by['t_hole_sk']['entities'], _ev)
-    assert len(_holes) == _cells + _corner + (_cells - 1)              # bores, corner holes, hollows
+    assert len(_holes) == ((_cells + 1) // 2) + (_corner // 4) + (_cells // 2)  # quadrant bores, corner hole, hollows
     for _hp in _holes:
-        assert _simple(_hp) and all(_inside(p, _out) for p in _hp)
+        assert _simple(_hp)
+    assert [_by['t_half']['op'], _by['t']['op']] == ['mirror', 'mirror']
+    assert _by['t_half']['plane'] == 'yz' and _by['t']['plane'] == 'xz'
+    assert _by['t_half']['target'] == 't_qtr' and _by['t']['target'] == 't_qtr'
 
 # The 2020 slot: 6.2 opening, 11 wide under the 1.8 lips, down to the 7.8 square core; 7.2 x 0.5 recess
 _x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='2020', length=100)
 _out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
-for _sx in (-1, 1):
-    assert _has(_out, _sx * 3.6, -10) and _has(_out, _sx * 3.6, -9.5) and _has(_out, _sx * 3.1, -9.5)
-    assert _has(_out, _sx * 3.1, -8.2) and _has(_out, _sx * 5.5, -8.2)
-    assert _has(_out, _sx * (3.9 - 1.5 * math.sqrt(0.5)), -3.9)   # where the spar meets the core
-    assert _has(_out, -3.9, _sx * (3.9 - 1.5 * math.sqrt(0.5)))   # the same on the left slot
-assert _has(_out, -10, 8.5) and _has(_out, -10 + 1.5 - 1.5 * math.sqrt(0.5), 10 - 1.5 + 1.5 * math.sqrt(0.5))
+assert _has(_out, 3.6, -10) and _has(_out, 3.6, -9.5) and _has(_out, 3.1, -9.5)
+assert _has(_out, 3.1, -8.2) and _has(_out, 5.5, -8.2)
+assert _has(_out, 3.9 - 1.5 * math.sqrt(0.5), -3.9)              # where the bottom spar meets the core
+assert _has(_out, 10, -8.5) and _has(_out, 8.5, -10)
 # The 4040's round core: the slot's floor runs over the core's edge, 12 mm in
 _x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='4040', length=100)
 _out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
-assert _has(_out, 0, -8) and _has(_out, 8, 0) and _has(_out, 0, 8) and _has(_out, -8, 0)
+assert _has(_out, 0, -8) and _has(_out, 8, 0) and _has(_out, 0, 0)
 _arcs = [sg for sg in _by['t_sk']['entities'][0]['segments'] if 'through' in sg]
 for _sg in _arcs[:1]:                                                  # the floor's arc point is on the core
     assert abs(math.hypot(*[_ev(c) for c in _sg['through']]) - 8) < 1e-9
 assert _by['t_hole_sk']['entities'][1]['type'] == 'center_rectangle'
-# Overrides: no bore, no recess, square corners, moved
+# Overrides: no bore, no recess, square corners, moved (offset mirrors follow non-zero center)
 _x, _by, (_v, _ev) = _expand('tslot_profile', id='t', series='2020', length=50, center=[100, 0], bore=0,
                              slot=6.5, recess_width=0, fillet=0)
 assert 't_hole_sk' not in _by and _x['parameters']['t_slot'] == '6.5 mm'
 assert 't_recess_width' not in _x['parameters'] and 't_fillet' not in _x['parameters']
 _out = _sketch_loops(_by['t_sk']['entities'], _ev)[0]
-assert _has(_out, 90, -10) and _has(_out, 110, 10) and not any('through' in s for s in _by['t_sk']['entities'][0]['segments'])
+assert _has(_out, 110, -10) and _has(_out, 100, 0) and not any('through' in s for s in _by['t_sk']['entities'][0]['segments'])
+assert _by['t_half'].get('offset') == '100 mm' and 'offset' not in _by['t']
+_fails(_shape('tslot_profile', id='t', series='2020', length=50, mode='join'), 'mode')
 _fails(_shape('tslot_profile', id='t', series='2030', length=50), 'series')
 _fails(_shape('tslot_profile', id='t', series='2020', length=50, slot=12), 'slot < chamber')
 _fails(_shape('tslot_profile', id='t', series='2020', length=50, lip=4), 'lip + 0.71 * spar')
@@ -1951,6 +2012,39 @@ _fails(_shape('tslot_profile', id='t', series='2020', length=50, core=1), '1.41 
 _fails(_shape('tslot_profile', id='t', series='2020', length=50, bore=9), 'bore < core')
 _fails(_shape('tslot_profile', id='t', series='2020', length=50, recess_depth=2), 'recess_depth < lip')
 _fails(_shape('tslot_profile', id='t', series='2020', length=50, core_shape='oval'), 'core_shape')
+
+# Compound assembly exercising splines, profile spline segments, 3D offset mirrors, shapes & BOM
+_gr = json.loads((here / 'examples' / 'gantry_router_head.json').read_text(encoding='utf-8'))
+_gr_exp = dsl_mod.expand_shapes(_gr)
+validate(_gr_exp)
+_gr_steps = [s for c in _gr_exp['components'] for s in c['timeline']]
+assert not any(shape_registry.get_shape(s['op']) for s in _gr_steps)
+assert any(s['op'] == 'mirror' and 'offset' in s and 'feature' in s for s in _gr_steps)
+assert any(s['op'] == 'mirror' and 'offset' in s and 'feature' not in s for s in _gr_steps)
+_gr_ents = [e for s in _gr_steps if s['op'] == 'sketch' for e in s['entities']]
+assert any(e['type'] == 'spline' and not e.get('closed') for e in _gr_ents)
+assert any(e['type'] == 'spline' and e.get('closed') for e in _gr_ents)
+assert any(e['type'] == 'profile' and any('spline' in sg for sg in e['segments']) for e in _gr_ents)
+_gr_ev = bom_mod.Evaluator(_gr_exp['parameters'])
+for _s in _gr_steps:
+    if _s['op'] == 'sketch' and all(e['type'] != 'spline' or e.get('closed') for e in _s['entities']):
+        for _lp in _sketch_loops(_s['entities'], _gr_ev):
+            assert _simple(_lp), f"self-intersecting loop in {_s['id']}"
+for _e in _gr_ents:
+    if _e['type'] in ('spline', 'profile'):
+        _gsk = MockSketchObj()
+        _gsk.sketchCurves.arcs_list = []
+        _draw(_gsk, _e, dummy_ex, lambda v: _gr_ev(v) / 10.0, dummy_pt)
+_gr_bom = {(r['Category'], r['Item']): r for r in bom_mod.collect(_gr)}
+assert _gr_bom[('Made', 'Spline-Contoured Gantry Cheek')]['Qty'] == 2
+assert _gr_bom[('Made', 'Spline-Contoured Gantry Cheek')]['Note'] == '6061-T6 Aluminium'
+assert _gr_bom[('Made', 'Offset-Mirrored Spline Cable Arch')]['Note'] == 'Carbon-Fiber PETG'
+assert _gr_bom[('Motion', 'T8 lead screw, lead 8 mm, 350 mm')]['Qty'] == 1
+assert _gr_bom[('Fasteners', 'M3x8 button head screw (ISO 7380)')]['Qty'] == 5
+assert _gr_bom[('Fasteners', 'M3 heat-set insert')]['Qty'] == 5
+assert _gr_bom[('Frame', '2020 aluminium T-slot extrusion, cut to 170 mm')]['Qty'] == 2
+assert _gr_bom[('Frame', '2060 aluminium T-slot extrusion, cut to 300 mm')]['Qty'] == 1
+assert _gr_bom[('Wiring', '4-core 18 AWG shielded drag-chain cable')]['Qty'] == 1.5
 
 # Test 6: Layer 2 Explicit constraints validation
 dsl_with_constraints = {
@@ -2036,6 +2130,7 @@ def _load_addin_with_stub_fusion(pkg_name='vibeshaper_addin', app_factory=None):
     stub_core.__getattr__ = lambda name: _Stub
     stub_fusion.__getattr__ = lambda name: _Stub
     stub_core.Application = type('Application', (), {'get': staticmethod(lambda: fake_app)})
+    stub_core.HTMLEventArgs = types.SimpleNamespace(cast=lambda a: a)
     stub_adsk.core, stub_adsk.fusion = stub_core, stub_fusion
     stub_adsk.doEvents = lambda: None
 
@@ -2559,6 +2654,8 @@ class _Harness:
         self.palettes = {}
         self.save_dialog = SimpleNamespace(result=None, filename='')
         self.builds = 0
+        self.steps_executed = 0
+        self._build_triggers = []  # [[at_step, action, data], ...]
         self.progress_bar = []  # Fusion's status-bar progress: covers the docked panel, so never used
         self.addin = None
         self.design = None
@@ -2581,18 +2678,29 @@ class _Harness:
                 self.pid = pid
                 self.isVisible = True
                 self.dockingState = None
-                self.incomingFromHTML = SimpleNamespace(add=lambda fn: None)
+                self.loaded = False
+                self.handlers = []
+                self.incomingFromHTML = SimpleNamespace(add=self.handlers.append)
 
             def sendInfoToHTML(self, action, data):
+                if not self.loaded:
+                    return  # drops pushes before WebView loads & registers fusionJavaScriptHandler
                 target = h.bom_panel if self.pid == 'VibeShaper_BOM' else h.panel
                 target.append(json.loads(data))
+
+            def from_html(self, action, data):
+                if (self.pid == 'VibeShaper_Palette' and action == 'ready') or (
+                        self.pid == 'VibeShaper_BOM' and action == 'bom_ready'):
+                    self.loaded = True
+                assert self.handlers, f'{self.pid}: no incomingFromHTML handler registered'
+                args = SimpleNamespace(action=action, data=json.dumps(data), returnData='')
+                for fn in self.handlers:
+                    fn.notify(args)
 
             def deleteMe(self):
                 h.palettes.pop(self.pid, None)
 
         def _pal_item(pid):
-            if pid == 'VibeShaper_Palette':
-                return h.palettes.setdefault(pid, Palette(pid))
             return h.palettes.get(pid)
 
         def _pal_add(pid, *a):
@@ -2635,9 +2743,11 @@ class _Harness:
     def run_build(self):
         """The hidden build command: a transaction Fusion rolls back if execute fails."""
         self.builds += 1
+        self.steps_executed = 0
         tl, params = self.design.timeline, self.design.userParameters
-        root = self.design.rootComponent
-        snap = (list(tl.items), list(tl.groups), dict(params.d), list(root.occs), dict(self.design.reg))
+        root, attrs = self.design.rootComponent, self.design.attributes
+        snap = (list(tl.items), list(tl.groups), dict(params.d), list(root.occs),
+                dict(self.design.reg), {k: v.value for k, v in attrs.d.items()})
         args = SimpleNamespace(executeFailed=False, executeFailedMessage='')
         self.addin._BuildExecute().notify(args)
         if args.executeFailed:
@@ -2647,6 +2757,7 @@ class _Harness:
             root.occs[:] = snap[3]
             self.design.reg.clear()
             self.design.reg.update(snap[4])
+            attrs.d = {k: SimpleNamespace(value=v) for k, v in snap[5].items()}
             self.addin._BuildFailed().notify(args)
 
     def pump(self, until, timeout=5):
@@ -2670,8 +2781,17 @@ class _Harness:
                 return
         raise AssertionError('timed out waiting for the add-in')
 
+    def during_build(self, action, at_step=1, **data):
+        self._build_triggers.append([at_step, action, data])
+
+    def do_events(self):
+        while self._build_triggers and self._build_triggers[0][0] <= self.steps_executed:
+            _, action, data = self._build_triggers.pop(0)
+            self.act(action, **data)
+
     def act(self, action, **data):
-        self.addin.ACTIONS[action](data)
+        pid = 'VibeShaper_BOM' if action in ('bom_ready', 'export_bom') and 'VibeShaper_BOM' in self.palettes else 'VibeShaper_Palette'
+        self.palettes[pid].from_html(action, data)
 
     def chat_view(self):
         views = [e for e in self.panel if e.get('type') in ('chat', 'state') and e.get('chat')]
@@ -2690,6 +2810,7 @@ e2e, _, _, e2e_app = _load_addin_with_stub_fusion('vibeshaper_e2e', H.make_app)
 H.addin = e2e
 H.design = H.Design()
 e2e_app.activeProduct = H.design
+e2e.adsk.doEvents = H.do_events
 e2e.importlib = SimpleNamespace(reload=lambda m: m)  # keep the fake dsl.execute below
 e2e.llm.LOG_FILE = tmp_log_dir / 'e2e.log'
 e2e.llm.LAST_RESPONSE_FILE = tmp_log_dir / 'e2e_last.txt'
@@ -2705,17 +2826,27 @@ BUILT_INTO = []  # component name (None = root) per execute
 
 def _fake_execute(design, d, group_name='VibeShaper', comp=None, progress=None):
     BUILT_INTO.append(comp.name if comp else None)
+    H.steps_executed = 0
+    steps = list(d.get('timeline') or []) + [s for c in d.get('components') or [] for s in c['timeline']]
+    total = len(steps)
     if progress:
-        progress(0, len(d['timeline']), 'Creating parameters')
-        progress(len(d['timeline']), len(d['timeline']), 'Done')
-    if d.get('name') == 'bad':
-        raise ValueError('timeline[1] (extrude): sketch has no closed profiles')
+        progress(0, total, 'Creating parameters')
     for k, v in d['parameters'].items():
         assert k not in design.userParameters.d, f'parameter {k} still exists: old version not deleted first'
         design.userParameters.d[k] = _FParam(design.userParameters.d, k, v)
-    design.timeline.add_group(group_name, len(d['timeline']))
-    return {'group_name': group_name, 'param_map': {k: k for k in d['parameters']},
-            'feature_count': len(d['timeline'])}
+    grp = design.timeline.add_group(group_name, total)
+    for i, s in enumerate(steps):
+        if progress:
+            progress(i, total, s.get('op', 'step'))
+        if d.get('name') == 'bad':
+            raise ValueError('timeline[1] (extrude): sketch has no closed profiles')
+        H.steps_executed += 1
+    if d.get('name') == 'bad':
+        raise ValueError('timeline[1] (extrude): sketch has no closed profiles')
+    if progress:
+        progress(total, total, 'Done')
+    return {'group_name': grp.name, 'param_map': {k: k for k in d['parameters']},
+            'feature_count': total}
 
 
 e2e.dsl.execute = _fake_execute
@@ -2754,7 +2885,12 @@ e2e.providers.register_provider(_ScriptedProvider())
 SP = _ScriptedProvider
 groups = lambda: [g.name for g in H.design.timeline.groups]
 
+e2e._show_palette()
+assert H.palettes['VibeShaper_Palette'].loaded is False
+e2e._emit_state()
+assert H.panel == []  # pre-ready pushes are dropped until the panel says ready
 H.act('ready')
+assert H.palettes['VibeShaper_Palette'].loaded is True
 assert H.panel[-1]['type'] == 'state' and H.panel[-1]['chat']['turns'] == []
 
 # 1. First prompt builds v1 in its own timeline group
@@ -3205,13 +3341,13 @@ _macro_design = {
     'op': 'zz_bracket',
     'name': 'ZZ Bracket',
     'order': 999,
-    'prompt': ['{"op": "zz_bracket", "id": name}  A bracket with mirrored mounting tabs and nested bolt holes.'],
+    'prompt': ['{"op": "zz_bracket", "id": name}  A bracket with curved cam cutout and nested bolt holes.'],
     'parameters': {'inner_w': '20 mm', 'wall': '4 mm', 'outer_w': 'inner_w + 2 * wall', 'holes_n': 2},
     'timeline': [
         {'op': 'sketch', 'id': 'sk', 'plane': 'xy', 'entities': [
             {'type': 'center_rectangle', 'center': [0, 0], 'width': 'outer_w', 'height': 'wall * 5'},
-            {'type': 'circle', 'id': 'tab_hole', 'center': ['outer_w / 2 - wall', 0], 'diameter': '3 mm'},
-            {'type': 'mirror', 'entities': ['tab_hole'], 'line': [[0, 0], [0, 1]]},
+            {'type': 'circle', 'id': 'tab_hole_r', 'center': ['outer_w / 2 - wall', 0], 'diameter': '3 mm'},
+            {'type': 'spline', 'id': 'cam_loop', 'points': [[0, 'wall'], ['wall', 0], [0, '-wall'], ['-wall', 0]], 'closed': True},
         ]},
         {'op': 'extrude', 'id': 'pad', 'sketch': 'sk', 'distance': 'wall', 'mode': 'new_body'},
         {'op': 'bolt_hole', 'id': 'bh', 'size': 'M5', 'depth': 'wall', 'center': ['-inner_w / 4', 0],
@@ -3239,10 +3375,10 @@ try:
     assert _jx['parameters']['b1_outer_w'] == 'b1_inner_w + 2 * b1_wall'
     assert _jx['parameters']['b1_holes_n'] == 2
     _jby = {s.get('id'): s for s in _jx['timeline']}
-    assert _jby['b1_sk']['entities'][1]['id'] == 'tab_hole'
-    assert _jby['b1_sk']['entities'][2]['entities'] == ['tab_hole']
+    assert _jby['b1_sk']['entities'][1]['id'] == 'tab_hole_r'
+    assert _jby['b1_sk']['entities'][2]['points'] == [[0, 'b1_wall'], ['b1_wall', 0], [0, '-b1_wall'], ['-b1_wall', 0]]
     _jv, _jev = _eval_params(_jx['parameters'])
-    assert len(_sketch_loops(_jby['b1_sk']['entities'], _jev)) == 3  # rectangle + mirrored pair of circles
+    assert len(_sketch_loops(_jby['b1_sk']['entities'], _jev)) == 3  # rectangle + circle + closed spline loop
     assert abs(_jv['b1_outer_w'] - 38.0) < 1e-9  # 30 + 2 * 4
     assert _jby['b1_pad']['id'] == 'b1_pad' and _jby['b1']['op'] == 'linear_pattern'
     assert _jby['b1_bh']['mode'] == 'cut' and 'b1_bh_sk' in _jby
@@ -3658,12 +3794,23 @@ assert H.last_ai()['status'] == 'done' and H.last_ai()['version'] == 1
 H.bom_panel.clear()
 H.act('open_bom', n=1)
 assert 'VibeShaper_BOM' in H.palettes
+assert H.palettes['VibeShaper_BOM'].loaded is False
+assert H.bom_panel == []  # initial push before bom.html loads is dropped
+H.act('bom_ready')
+assert H.palettes['VibeShaper_BOM'].loaded is True
 assert H.bom_panel and H.bom_panel[-1]['type'] == 'bom'
 _bev = H.bom_panel[-1]
 assert _bev['version'] == 1 and _bev['is_current'] is True
 assert _bev['buy_count'] == 1 and _bev['make_count'] == 1
 assert any(r['item'] == 'M4 screw' and r['qty'] == '4' and not r['made'] for r in _bev['rows'])
 assert 'M4 screw,4,pcs' in _bev['csv']
+
+# Closing (hiding) and reopening BOM finds the palette already loaded and pushes immediately
+H.palettes['VibeShaper_BOM'].isVisible = False
+H.bom_panel.clear()
+H.act('open_bom', n=1)
+assert H.palettes['VibeShaper_BOM'].isVisible is True
+assert H.bom_panel and H.bom_panel[-1]['type'] == 'bom'
 
 H.act('set_param', name='qty_n', expr='8')
 assert any(r['item'] == 'M4 screw' and r['qty'] == '8' for r in H.bom_panel[-1]['rows'])
@@ -3697,8 +3844,122 @@ finally:
     else:
         e2e.adsk.core.DialogResults = _saved_dr
 
+H.bom_panel.clear()
+H.act('bom_ready')
+assert H.bom_panel and H.bom_panel[-1]['type'] == 'bom'
+
+_bad_c = e2e._store().active()
+_bad_v = _bad_c.current_version()
+_orig_bom = _bad_v['dsl'].get('bom')
+try:
+    _bad_v['dsl']['bom'] = [{'category': 'Fasteners', 'item': 'Bad bolt', 'qty': 'missing_param'}]
+    _err_bom = e2e._bom_payload(_bad_c, _bad_v['n'])
+    assert _err_bom['empty'] is True and 'missing_param' in _err_bom['error'], _err_bom
+finally:
+    if _orig_bom is None:
+        _bad_v['dsl'].pop('bom', None)
+    else:
+        _bad_v['dsl']['bom'] = _orig_bom
+
+import shutil as _shutil, subprocess as _subprocess, re as _re
+_node_bin = _shutil.which('node')
+if _node_bin:
+    _bom_html = (_HERE / 'palette' / 'bom.html').read_text(encoding='utf-8')
+    _bom_js = _re.search(r'<script>([\s\S]*?)</script>', _bom_html).group(1)
+    _js_probe = '''
+const mk = (tag = 'div', filter = null) => ({
+  tag, attrs: {}, children: [], style: {}, dataset: filter ? { filter } : {}, textContent: '',
+  append(...kids) { this.children.push(...kids); },
+  setAttribute(k, v) { this.attrs[k] = v; },
+  removeAttribute(k) { delete this.attrs[k]; },
+  addEventListener() {},
+  querySelectorAll: () => [],
+});
+const seg = mk('div');
+const segBtns = ['all', 'buy', 'make'].map((f) => mk('button', f));
+seg.querySelectorAll = () => segBtns;
+const els = new Map([['bom-seg', seg]]);
+global.window = global;
+global.location = { search: '' };
+global.document = {
+  documentElement: mk('html'),
+  createElement: (t) => mk(t),
+  getElementById: (id) => (els.has(id) ? els.get(id) : els.set(id, mk('div')).get(id)),
+};
+const sent = [];
+setTimeout(() => {
+  window.adsk = {
+    fusionSendData(action, data) {
+      sent.push([action, data]);
+      if (action === 'bom_ready') {
+        window.fusionJavaScriptHandler.handle('event', JSON.stringify({
+          type: 'bom', theme: 'dark', empty: false, title: 'Gantry', version: 2, is_current: true,
+          buy_count: 1, make_count: 0,
+          rows: [{ category: 'Motion', item: 'NEMA17', qty: '1', unit: 'pcs', note: '', link: '', made: false }],
+          csv: 'Category,Item\\nMotion,NEMA17\\n',
+        }));
+      }
+      return '';
+    },
+  };
+}, 120);
+''' + _bom_js + '''
+setTimeout(() => {
+  const sub = document.getElementById('bom-sub').textContent;
+  const ok = sent.length === 1 && sent[0][0] === 'bom_ready'
+    && sub.startsWith('Gantry · v2')
+    && document.documentElement.attrs['data-theme'] === 'dark';
+  process.exit(ok ? 0 : 1);
+}, 350);
+'''
+    _res = _subprocess.run([_node_bin, '-e', _js_probe], capture_output=True, text=True, timeout=10)
+    assert _res.returncode == 0, (_res.stdout, _res.stderr)
+
 assert e2e._bom_palette() is not None
 e2e._bom_palette().deleteMe()
 assert 'VibeShaper_BOM' not in H.palettes
+
+# 22. Stopping mid-build aborts remaining steps and rolls back the Fusion transaction
+def _stop_dsl(size):
+    return {'name': 'stop_box', 'parameters': {'stop_w': f'{size} mm'}, 'timeline': [
+        {'op': 'sketch', 'id': 's', 'plane': 'xy',
+         'entities': [{'type': 'center_rectangle', 'center': [0, 0], 'width': 'stop_w', 'height': 'stop_w'}]},
+        {'op': 'extrude', 'sketch': 's', 'distance': 'stop_w', 'mode': 'new_body'},
+        {'op': 'fillet', 'radius': '1 mm'}]}
+
+
+H.act('new_chat')
+H.act('send', text=json.dumps(_stop_dsl(40)))
+H.pump(H.idle)
+_c_stop = e2e._store().active()
+assert H.last_ai()['status'] == 'done' and [v['n'] for v in _c_stop.versions] == [1] and H.steps_executed == 3
+assert H.design.userParameters.d['stop_w'].expression == '40 mm'
+
+# JSON turn replacing v1: aborts at step 1 (skipping step 2) and rolls back deleted v1 + attributes
+H.during_build('stop', at_step=1)
+H.act('send', text=json.dumps(_stop_dsl(80)))
+assert H.steps_executed == 1
+assert not e2e._busy() and H.last_ai()['status'] == 'stopped'
+assert [v['n'] for v in _c_stop.versions] == [1] and _c_stop.versions[0]['dsl']['parameters']['stop_w'] == '40 mm'
+assert H.design.userParameters.d['stop_w'].expression == '40 mm'
+assert H.design.timeline.groups[-1].name == _c_stop.group_name(1)
+_rolled_back_chat = chat_mod.ChatStore.from_json(H.design.attributes.itemByName('VibeShaper', 'chats').value).get(_c_stop.id)
+assert len(_rolled_back_chat.turns) == 2 and _rolled_back_chat.turns[-1]['status'] == 'done'
+assert e2e.SAVE_EVENT_ID in [eid for eid, _ in list(H.events.queue)]
+H.pump(lambda: H.events.empty())
+_saved_stop = chat_mod.ChatStore.from_json(H.design.attributes.itemByName('VibeShaper', 'chats').value).get(_c_stop.id)
+assert len(_saved_stop.turns) == 4 and _saved_stop.turns[-1]['status'] == 'stopped'
+
+# Model turn with auto_fix enabled: aborts cleanly without triggering self-healing retry
+_msgs_before_stop = len(_c_stop.messages)
+H.during_build('stop', at_step=1)
+SP.replies = [_stop_dsl(90)]
+H.act('send', text='make it 90 mm')
+H.pump(H.idle)
+assert H.steps_executed == 1
+assert not e2e._busy()
+assert H.last_ai()['status'] == 'stopped' and H.last_ai()['attempts'] == []
+assert len(_c_stop.messages) == _msgs_before_stop
+assert H.design.userParameters.d['stop_w'].expression == '40 mm'
 
 print('ok')

@@ -249,7 +249,14 @@ def _bom_payload(c=None, version_n=None):
             'title': c.title if c else '', 'version': None, 'is_current': False,
             'rows': [], 'csv': '', 'buy_count': 0, 'make_count': 0,
         }
-    rows = bom.collect(v['dsl'])
+    try:
+        rows = bom.collect(v['dsl'])
+    except Exception as e:
+        return {
+            'type': 'bom', 'theme': theme, 'empty': True, 'error': str(e),
+            'title': c.title, 'version': v['n'], 'is_current': False,
+            'rows': [], 'csv': '', 'buy_count': 0, 'make_count': 0,
+        }
     make_count = sum(1 for r in rows if r['Category'] == bom.MADE)
     cur = c.current_version()
     return {
@@ -678,18 +685,26 @@ class _BuildCreated(adsk.core.CommandCreatedEventHandler):
         _keep(_BuildFailed(), cmd.executeFailed)
 
 
-def _build_progress(c, t):
+def _build_progress(c, t, job_id=None):
     """progress(done, total, label) for dsl.execute: the panel shows a bar with the current step.
     The build runs on Fusion's main thread, and the panel only receives messages while Fusion's
     event loop runs, so each step lets it run a few times."""
+    expected = _job.get('id') if job_id is None else job_id
+
     def progress(done, total, label):
+        if _job.get('id') != expected:
+            raise InterruptedError('Build stopped')
         _emit({'type': 'stream', 'chat_id': c.id, 'turn_id': t['id'],
                'progress': {'done': done, 'total': total, 'label': str(label)}})
         try:
             for _ in range(3):
+                if _job.get('id') != expected:
+                    break
                 adsk.doEvents()
         except Exception:
             pass
+        if _job.get('id') != expected:
+            raise InterruptedError('Build stopped')
     return progress
 
 
@@ -698,14 +713,15 @@ class _BuildExecute(adsk.core.CommandEventHandler):
         _reload_plugins(features)  # live hot-load feature/entity plugin edits
         _reload_plugins(shapes)  # live hot-load shape plugin edits
         importlib.reload(dsl)  # live hot-load dsl.py edits without restarting add-in
+        job_id = _job.get('id')
         c, t = _job_target()
         d = _job.get('dsl')
-        if not t or not d:
+        if not job_id or not t or not d:
             return
         _job['build_failed_handled'] = False
         stage = 'replace'
         occ = None
-        progress = _build_progress(c, t)
+        progress = _build_progress(c, t, job_id)
         try:
             design = _design()
             prev = _live_version(c, design)
@@ -732,6 +748,14 @@ class _BuildExecute(adsk.core.CommandEventHandler):
             stage = 'build'
             n = (c.versions[-1]['n'] + 1) if c.versions else 1
             info = dsl.execute(design, d, group_name=c.group_name(n), comp=comp, progress=progress)
+            if _job.get('id') != job_id:
+                raise InterruptedError('Build stopped')
+        except InterruptedError:
+            _job['build_failed_handled'] = True
+            args.executeFailed = True  # Fusion rolls back the whole command, including the delete
+            _log('VibeShaper: build stopped by user')
+            _save_store_later()
+            return
         except Exception:
             _job['build_failed_handled'] = True
             err = traceback.format_exc()
