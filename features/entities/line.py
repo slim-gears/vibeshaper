@@ -13,12 +13,14 @@ class LineEntity(BaseEntity):
     prompt = '{"type": "line", "start": [a, b], "end": [c, d]}'
 
     def validate(self, entity, where, ent_ids):
-        h.xy(entity['start'], where)
-        h.xy(entity['end'], where)
+        h.pt2or3(entity['start'], where)
+        h.pt2or3(entity['end'], where)
+        if len(entity['start']) != len(entity['end']):
+            raise ValueError(f'{where}: start and end must both be 2D [a, b] or both 3D [x, y, z]')
 
     def draw(self, sk, e, ctx):
-        p1 = ctx.pt(ctx.cm(e['start'][0]), ctx.cm(e['start'][1]))
-        p2 = ctx.pt(ctx.cm(e['end'][0]), ctx.cm(e['end'][1]))
+        p1 = h.coord_pt(ctx, e['start'])
+        p2 = h.coord_pt(ctx, e['end'])
         line = sk.sketchCurves.sketchLines.addByTwoPoints(p1, p2)
         ctx.place([line.startSketchPoint, line.endSketchPoint], [e['start'], e['end']], [(0, 1, line)])
         ctx.register(e, line, start=line.startSketchPoint, end=line.endSketchPoint)

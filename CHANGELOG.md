@@ -4,6 +4,20 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Added
+- **Loft feature (`loft`) and 3D sketches (`"plane": "3d"`).** Added the `loft` timeline operation (blending 2+ cross-section sketches with optional guide `"rails"`, `"centerline"`, and `"closed"` loop support) and `"plane": "3d"` sketches for `line`, `polyline`, `spline`, and `profile` curves using 3D world coordinates `[x, y, z]`.
+- **Zero-config web search & page reading (`tools/web.py`).** Added `web_search` (DuckDuckGo Lite + Wikipedia fallback) and `fetch_web_page` so models can look up real-world object dimensions, datasheets, and mounting hole spacings, running off the main thread so network I/O never blocks Fusion's UI.
+- **Viewport screenshot capture (`tools/view.py`).** Added `capture_viewport` (`needs = ('images',)`), allowing vision-capable models to render and inspect 1–4 camera views (`"iso"`, `"front"`, `"back"`, `"top"`, `"bottom"`, `"left"`, `"right"`, `"current"`) with multimodal tool results in both Ollama and Gemini.
+- **Real-time tool call logging.** Tool calls and results are now logged immediately to `vibeshaper.log` as they execute, and summarized under `--- TOOLS ---` in the transcript.
+
+### Fixed
+- **Tools offered before opening the model menu.** Starting a turn before opening the model dropdown now defaults to offering tool-calling toolkits (with automatic retry without tools if an older Ollama model rejects them).
+- **Tool summary label in the chat panel.** The collapsed tool pill in `palette/app.js` now displays the actual tool labels (`Searched the web for “…”`, `Captured viewport (…)`, etc.) instead of always saying `"Looked at your design"`.
+- **Parameter expressions validated before building.** `dsl.validate()` now evaluates parameter expressions with `bom.Evaluator` so non-numeric strings or undefined parameter references are caught immediately in the LLM validation loop.
+- **Removed mock backend from production palette code.** Extracted `MockBackend` and standalone mock fallbacks out of `palette/app.js` and `palette/bom.html`, and added a cross-platform Node.js test suite for `palette/app.js` in `test_dsl.py`.
+
 ## [0.8.0]
 
 ### Added
@@ -92,7 +106,8 @@ First public version.
 - **Pluggable tools**: toolkits are plugins in `tools/`, like providers.
 - Settings and logs are kept in the user's own folder (`%APPDATA%\PromptCAD`, `~/Library/Application Support/PromptCAD`), outside the add-in.
 
-[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/slim-gears/vibeshaper/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/slim-gears/vibeshaper/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/slim-gears/vibeshaper/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/slim-gears/vibeshaper/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/slim-gears/vibeshaper/compare/v0.6.0...v0.6.1

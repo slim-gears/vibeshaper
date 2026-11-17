@@ -292,8 +292,25 @@ def validate(d):
     for k, v in params.items():
         if not NAME_RE.match(k):
             raise ValueError(f'parameters: bad name {k!r}')
-        if not isinstance(v, (str, int, float)):
-            raise ValueError(f'parameters.{k}: must be a string or number')
+        if isinstance(v, bool) or not isinstance(v, (str, int, float)):
+            raise ValueError(f'parameters.{k}: must be a numeric expression or number')
+    # Fusion creates parameters in order, so an expression can only use parameters above it.
+    order = {k: i for i, k in enumerate(params)}
+    for i, (k, v) in enumerate(params.items()):
+        for ref in re.findall(r'[A-Za-z_]\w*', str(v)):
+            if order.get(ref, -1) > i:
+                raise ValueError(f'parameters.{k}: uses {ref!r}, which is defined later; '
+                                 f'move {k!r} below {ref!r}')
+    try:
+        from . import bom as _bom
+    except ImportError:
+        import bom as _bom
+    ev = _bom.Evaluator(params)
+    for k in params:
+        try:
+            ev(k)
+        except ValueError as e:
+            raise ValueError(f'parameters.{k}: {e} (parameters hold numeric/length/angle expressions only, not text labels)') from None
     if 'bom' in d:
         check_bom(d['bom'], 'bom')
     tl = d.get('timeline', [])
@@ -600,15 +617,18 @@ def ensure_component(design, occ_token, name):
 
 
 def placement_parameters(d):
-    """Parameters that an instance's position or turn depends on, directly or through other
-    parameters. Fusion doesn't move an occurrence when they change, so the design is rebuilt."""
+    """Parameters that an instance's position/turn or a 3D sketch's coordinates depend on, directly
+    or through other parameters. Fusion doesn't update them automatically when a user parameter changes,
+    so the design is rebuilt."""
     params = d.get('parameters') or {}
     names = set(params)
 
     def refs(v):
         return {w for w in re.findall(r'[A-Za-z_][A-Za-z0-9_]*', json.dumps(v)) if w in names}
 
-    todo = refs([[i.get('position'), i.get('rotate')] for i in d.get('instances') or []])
+    steps = list(d.get('timeline') or []) + [s for c in d.get('components') or [] for s in c.get('timeline') or []]
+    step_refs = [feat.rebuild_refs(s) for s in steps if isinstance(s, dict) and (feat := features.get_feature(s.get('op')))]
+    todo = refs([[i.get('position'), i.get('rotate')] for i in d.get('instances') or []] + [r for r in step_refs if r])
     found = set()
     while todo:
         n = todo.pop()

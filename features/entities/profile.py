@@ -25,34 +25,41 @@ class ProfileEntity(BaseEntity):
               '   outline of lines, 3-point arcs ("through"), and fitted splines ("spline": intermediate fit points)')
 
     def validate(self, entity, where, ent_ids):
-        h.xy(entity['start'], where)
+        h.pt2or3(entity['start'], where)
+        dim = len(entity['start'])
         if not isinstance(entity['segments'], list) or not entity['segments']:
             raise ValueError(f'{where}: segments must be a non-empty list')
         for k, sg in enumerate(entity['segments']):
             h.need(sg, f'{where}.segments[{k}]', 'to')
-            h.xy(sg['to'], f'{where}.segments[{k}].to')
+            h.pt2or3(sg['to'], f'{where}.segments[{k}].to')
+            if len(sg['to']) != dim:
+                raise ValueError(f'{where}.segments[{k}].to: all profile points must have the same dimension ({dim}D)')
             if 'through' in sg and 'spline' in sg:
                 raise ValueError(f'{where}.segments[{k}]: segment cannot have both through and spline')
             if 'through' in sg:
-                h.xy(sg['through'], f'{where}.segments[{k}].through')
+                h.pt2or3(sg['through'], f'{where}.segments[{k}].through')
+                if len(sg['through']) != dim:
+                    raise ValueError(f'{where}.segments[{k}].through: must be {dim}D')
             if 'spline' in sg:
                 if not isinstance(sg['spline'], list) or not sg['spline']:
                     raise ValueError(f'{where}.segments[{k}].spline: must be a non-empty list of points')
                 for p in sg['spline']:
-                    h.xy(p, f'{where}.segments[{k}].spline')
+                    h.pt2or3(p, f'{where}.segments[{k}].spline')
+                    if len(p) != dim:
+                        raise ValueError(f'{where}.segments[{k}].spline: must be {dim}D')
 
     def draw(self, sk, e, ctx):
         curves, gc = sk.sketchCurves, sk.geometricConstraints
         # Lines and three-point arcs, end to end. Shared corners are one sketch point, each
         # arc's middle point sits on the arc, and every point is placed by dimensions.
-        def at(xy):
-            return ctx.pt(ctx.cm(xy[0]), ctx.cm(xy[1]))
+        def at(p):
+            return h.coord_pt(ctx, p)
 
         def same(a, b):
-            return abs(ctx.cm(a[0]) - ctx.cm(b[0])) < h.EPS and abs(ctx.cm(a[1]) - ctx.cm(b[1])) < h.EPS
+            return h.same_pt(ctx, a, b)
 
         def dist(a, b):
-            return math.hypot(a.x - b.x, a.y - b.y)
+            return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (getattr(a, 'z', 0) - getattr(b, 'z', 0)) ** 2)
 
         segs = e['segments']
         verts, coords, mids, links, made = [], [e['start']], [], [], []

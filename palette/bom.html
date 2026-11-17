@@ -108,32 +108,14 @@
     }
   }
 
-  const forceMock = /[?&]mock\b/.test(location.search);
-
   function hasBridge() {
-    return !forceMock && typeof window.adsk !== 'undefined' && typeof window.adsk.fusionSendData === 'function';
+    return typeof window.adsk !== 'undefined' && typeof window.adsk.fusionSendData === 'function';
   }
 
   function send(action, payload) {
     const data = JSON.stringify(payload || {});
     if (hasBridge()) {
       return Promise.resolve(window.adsk.fusionSendData(action, data));
-    }
-    if (action === 'copy') {
-      const text = (payload && payload.text) || '';
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard'), () => showToast('Could not copy'));
-      } else {
-        showToast('Copied to clipboard');
-      }
-    } else if (action === 'export_bom' && state.payload && state.payload.csv) {
-      const blob = new Blob(['\ufeff' + state.payload.csv], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `v${state.payload.version || 1}-bom.csv`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      showToast(`Saved ${a.download}`);
     }
     return Promise.resolve('');
   }
@@ -303,34 +285,13 @@
     if (state.payload && !state.payload.empty) send('export_bom', { n: state.payload.version });
   });
 
-  function loadMock() {
-    try {
-      const raw = localStorage.getItem('vibeshaper_mock_bom');
-      if (raw) onEvent(JSON.parse(raw));
-    } catch (_) {}
-  }
-
   function connect() {
-    const start = Date.now();
-    let mockWired = false;
     (function attempt() {
       if (hasBridge()) {
         send('bom_ready', {});
-        return;
+      } else {
+        setTimeout(attempt, 50);
       }
-      if (state.payload) return;
-      const elapsed = Date.now() - start;
-      if (forceMock || elapsed > 1200) {
-        if (!mockWired) {
-          mockWired = true;
-          loadMock();
-          window.addEventListener('storage', (e) => {
-            if (e.key === 'vibeshaper_mock_bom') loadMock();
-          });
-        }
-        if (forceMock || elapsed > 10000) return;
-      }
-      setTimeout(attempt, 50);
     })();
   }
 

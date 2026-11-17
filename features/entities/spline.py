@@ -10,7 +10,7 @@ class SplineEntity(BaseEntity):
     order = 55
     required = ('points',)
     schema = {'points': {'type': 'array', 'items': JS_POINT}, 'closed': {'type': 'boolean'}}
-    prompt = '{"type": "spline", "points": [[a, b], ...], "closed": false}   smooth fitted spline curve through points (periodic loop when "closed": true)'
+    prompt = '{"type": "spline", "points": [[a, b], ...], "closed": false}   smooth fitted spline curve through points (or [[x, y, z], ...] in a "plane": "3d" sketch; periodic loop when "closed": true)'
 
     def validate(self, entity, where, ent_ids):
         if 'closed' in entity and not isinstance(entity['closed'], bool):
@@ -21,20 +21,20 @@ class SplineEntity(BaseEntity):
         if not isinstance(pts, list) or len(pts) < min_pts:
             raise ValueError(f'{where}: spline needs at least {min_pts} points')
         for p in pts:
-            h.xy(p, where)
+            h.pt2or3(p, where)
+        if len({len(p) for p in pts}) > 1:
+            raise ValueError(f'{where}: spline points must all be 2D [a, b] or all 3D [x, y, z]')
 
     def draw(self, sk, e, ctx):
         import adsk.core
 
         raw = list(e['points'])
         is_closed = bool(e.get('closed', False))
-        if (is_closed and len(raw) > 3
-                and abs(ctx.cm(raw[-1][0]) - ctx.cm(raw[0][0])) < h.EPS
-                and abs(ctx.cm(raw[-1][1]) - ctx.cm(raw[0][1])) < h.EPS):
+        if is_closed and len(raw) > 3 and h.same_pt(ctx, raw[-1], raw[0]):
             raw.pop()
         coll = adsk.core.ObjectCollection.create()
-        for x, y in raw:
-            coll.add(ctx.pt(ctx.cm(x), ctx.cm(y)))
+        for p in raw:
+            coll.add(h.coord_pt(ctx, p))
         sp = sk.sketchCurves.sketchFittedSplines.add(coll)
         if is_closed:
             sp.isClosed = True

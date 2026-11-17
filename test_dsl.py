@@ -112,6 +112,7 @@ bad = [
     ({'timeline': [{'op': 'coil'}]}, 'missing diameter'),
     ({'timeline': [{'op': 'coil', 'diameter': '20 mm'}]}, 'missing section_size'),
     ({'timeline': [{'op': 'coil', 'diameter': '20 mm', 'section_size': '2 mm', 'axis': 'w'}]}, 'axis must be one of'),
+    ({'parameters': {'hole_dia': 'sleeve_dia + 1 mm', 'sleeve_dia': '28 mm'}, 'timeline': []}, "uses 'sleeve_dia', which is defined later"),
 ]
 for d, msg in bad:
     try:
@@ -204,12 +205,9 @@ assert [(p.order, p.name) for p in all_provs] == sorted((p.order, p.name) for p 
 _HERE = pathlib.Path(__file__).parent
 _core_py = ('VibeShaper.py', 'llm.py', 'chat.py', 'dsl.py', 'providers/__init__.py', 'providers/base.py',
             'tools/__init__.py', 'tools/base.py', 'features/__init__.py', 'features/base.py',
-            'features/entities/__init__.py', 'features/entities/base.py')
-_panel = (_HERE / 'palette/app.js').read_text(encoding='utf-8')
-_panel = _panel[:_panel.index('// MockBackend:')]  # the browser-preview mock may use sample providers
+            'features/entities/__init__.py', 'features/entities/base.py',
+            'palette/app.js', 'palette/index.html', 'palette/bom.html')
 _core_src = {f: (_HERE / f).read_text(encoding='utf-8') for f in _core_py}
-_core_src['palette/app.js'] = _panel
-_core_src['palette/index.html'] = (_HERE / 'palette/index.html').read_text(encoding='utf-8')
 for core_file, src in _core_src.items():
     for p in all_provs:
         for word in {p.id, p.name, p.short_name}:
@@ -658,6 +656,160 @@ assert 'Selected: body Base' in text
 _empty_root = _NS(bRepBodies=_Coll(), allOccurrences=_Coll())
 assert toolbox.summary(KIT, toolbox.ToolContext(_app_fake, _NS(rootComponent=_empty_root, timeline=_Coll()))) == ''
 
+# ----- Web tools: zero-config search (DuckDuckGo Lite + Wikipedia fallback) and page reading -----
+from tools import web as wt
+
+WKIT = toolbox.get_toolkit('web')
+assert WKIT is not None and WKIT.main_thread is False
+assert set(wt.TOOL_NAMES) == set(wt._TOOLS) == {'web_search', 'fetch_web_page'}
+for spec in wt.TOOL_SPECS:
+    assert spec['parameters']['type'] == 'object' and spec['description']
+assert [t['name'] for t in WKIT.tools()] == wt.TOOL_NAMES
+
+_ddg_html = '''
+<table>
+  <tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Frpi5">Raspberry Pi 5 Spec</a></td></tr>
+  <tr><td class="result-snippet">Board size is <b>85 mm</b> x <b>56 mm</b> with M2.7 mounting holes.</td></tr>
+  <tr><td><a class="result-link" href="https://duckduckgo.com/y.js?ad=1">Sponsored</a></td></tr>
+  <tr><td class="result-snippet">Ignore ad</td></tr>
+</table>
+'''
+_wiki_search_json = {
+    'query': {'search': [
+        {'title': 'Raspberry Pi', 'snippet': 'Single-board <span class="searchmatch">computer</span> family.'},
+    ]}
+}
+_wiki_extract_json = {
+    'query': {'pages': {'123': {'title': 'Raspberry Pi', 'extract': 'The Raspberry Pi 5 measures 85 mm by 56 mm.'}}}
+}
+_page_html = '''
+<html><head><title>RPi5 Mechanical</title><style>body{color:red}</style><script>var x=1;</script></head>
+<body><h1>Dimensions</h1><table><tr><th>Part</th><th>Size</th></tr><tr><td>Board</td><td>85 x 56 mm</td></tr></table>
+<ul><li>Hole pitch: 58 x 49 mm</li></ul></body></html>
+'''
+
+
+class _RawResp:
+    def __init__(self, raw, ctype='text/html; charset=utf-8'):
+        self._raw = raw.encode('utf-8') if isinstance(raw, str) else raw
+        self.headers = {'Content-Type': ctype}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+    def read(self, n=-1):
+        return self._raw[:n] if n > 0 else self._raw
+
+
+def _mock_web_open(req, timeout=None):
+    u = req.full_url
+    if 'lite.duckduckgo.com' in u:
+        return _RawResp(_ddg_html)
+    if 'en.wikipedia.org/w/api.php' in u and 'list=search' in u:
+        return _RawResp(json.dumps(_wiki_search_json), 'application/json')
+    if 'en.wikipedia.org/w/api.php' in u and 'prop=extracts' in u:
+        return _RawResp(json.dumps(_wiki_extract_json), 'application/json')
+    if u == 'https://example.com/rpi5':
+        return _RawResp(_page_html)
+    if u == 'https://example.com/drawing.pdf':
+        return _RawResp('%PDF-1.5', 'application/pdf')
+    raise urllib.error.URLError('no mock route')
+
+
+with unittest.mock.patch('urllib.request.urlopen', side_effect=_mock_web_open):
+    _ws_res = toolbox.run(WKIT, 'web_search', {'query': 'Raspberry Pi 5 dimensions', 'max_results': 3}, tctx)
+    assert _ws_res['total'] == 2
+    assert _ws_res['results'][0] == {
+        'title': 'Raspberry Pi 5 Spec',
+        'url': 'https://example.com/rpi5',
+        'snippet': 'Board size is 85 mm x 56 mm with M2.7 mounting holes.',
+    }
+    assert _ws_res['results'][1] == {
+        'title': 'Raspberry Pi (Wikipedia)',
+        'url': 'https://en.wikipedia.org/wiki/Raspberry_Pi',
+        'snippet': 'Single-board computer family.',
+    }
+    assert toolbox.label(WKIT, 'web_search', {'query': 'Raspberry Pi 5 dimensions'}, _ws_res) == \
+        'Searched the web for “Raspberry Pi 5 dimensions” · 2'
+
+    _wp_res = toolbox.run(WKIT, 'fetch_web_page', {'url': 'https://example.com/rpi5'}, tctx)
+    assert _wp_res['title'] == 'RPi5 Mechanical' and _wp_res['truncated'] is False
+    assert 'Board | 85 x 56 mm' in _wp_res['content'] and '- Hole pitch: 58 x 49 mm' in _wp_res['content']
+    assert 'var x=1' not in _wp_res['content'] and 'color:red' not in _wp_res['content']
+    assert toolbox.label(WKIT, 'fetch_web_page', {'url': 'https://example.com/rpi5'}, _wp_res) == \
+        'Read example.com · RPi5 Mechanical'
+
+    _wk_res = toolbox.run(WKIT, 'fetch_web_page', {'url': 'https://en.wikipedia.org/wiki/Raspberry_Pi'}, tctx)
+    assert _wk_res['title'] == 'Raspberry Pi' and '85 mm by 56 mm' in _wk_res['content']
+
+    _pdf_err = toolbox.run(WKIT, 'fetch_web_page', {'url': 'https://example.com/drawing.pdf'}, tctx)
+    assert 'PDF' in _pdf_err['error']
+
+assert 'query is required' in toolbox.run(WKIT, 'web_search', {'query': '  '}, tctx)['error']
+assert 'valid http' in toolbox.run(WKIT, 'fetch_web_page', {'url': 'ftp://bad'}, tctx)['error']
+
+# ----- View tools: viewport screenshot capture for vision-capable models (needs=('images',)) -----
+from tools import view as vt
+
+VKIT = toolbox.get_toolkit('view')
+assert VKIT is not None and VKIT.needs == ('images',) and VKIT.main_thread is True
+assert 'view' not in [k.id for k in toolbox.usable({'tools'})]
+assert 'view' in [k.id for k in toolbox.usable({'tools', 'images'})]
+assert set(vt.TOOL_NAMES) == set(vt._TOOLS) == {'capture_viewport'}
+for spec in vt.TOOL_SPECS:
+    assert spec['parameters']['type'] == 'object' and spec['description']
+
+
+class _FakeCamera:
+    def __init__(self, eye=(5.0, -5.0, 5.0), target=(0.0, 0.0, 0.0), up=(0.0, 0.0, 1.0)):
+        self.eye = _P(*eye)
+        self.target = _P(*target)
+        self.upVector = _P(*up)
+        self.isSmoothTransition = True
+        self.isFitView = False
+
+
+class _FakeViewport:
+    def __init__(self):
+        self.camera = _FakeCamera()
+        self.saved = []
+        self.fits = 0
+        self.refreshes = 0
+
+    def fit(self):
+        self.fits += 1
+        return True
+
+    def refresh(self):
+        self.refreshes += 1
+        return True
+
+    def saveAsImageFile(self, filename, width, height):
+        self.saved.append((filename, width, height, (round(self.camera.eye.x, 3), round(self.camera.eye.y, 3), round(self.camera.eye.z, 3))))
+        pathlib.Path(filename).write_bytes(b'\x89PNG\r\n\x1a\nFAKEPNG')
+        return True
+
+
+_fake_vp = _FakeViewport()
+_app_with_vp = _NS(activeViewport=_fake_vp)
+_vctx = toolbox.ToolContext(_app_with_vp, FF.design, {})
+_vres = toolbox.run(VKIT, 'capture_viewport', {'views': ['front', 'top'], 'width': 640, 'height': 480}, _vctx)
+assert _vres['views'] == ['front', 'top'] and _vres['count'] == 2 and _vres['width'] == 640 and _vres['height'] == 480
+assert len(_vres['images']) == 2 and all(img['mime_type'] == 'image/png' and img['data'] for img in _vres['images'])
+assert len(_fake_vp.saved) == 2
+# Front view looks from -Y toward target (0,0,0), top view from +Z
+assert _fake_vp.saved[0][3][0] == 0.0 and _fake_vp.saved[0][3][1] < 0 and _fake_vp.saved[0][3][2] == 0.0
+assert _fake_vp.saved[1][3][0] == 0.0 and _fake_vp.saved[1][3][1] == 0.0 and _fake_vp.saved[1][3][2] > 0
+# Original camera position is restored after capturing
+assert (round(_fake_vp.camera.eye.x, 3), round(_fake_vp.camera.eye.y, 3), round(_fake_vp.camera.eye.z, 3)) == (5.0, -5.0, 5.0)
+assert toolbox.label(VKIT, 'capture_viewport', {'views': ['front', 'top']}, _vres) == 'Captured viewport (front, top)'
+assert 'Unknown view' in toolbox.run(VKIT, 'capture_viewport', {'views': ['diagonal']}, _vctx)['error']
+assert 'between 1 and 4' in toolbox.run(VKIT, 'capture_viewport', {'views': ['iso', 'front', 'top', 'right', 'left']}, _vctx)['error']
+assert 'No active 3D viewport' in toolbox.run(VKIT, 'capture_viewport', {}, tctx)['error']
+
 # ----- The tool loop in llm.generate -----
 _tool_runs = []
 
@@ -715,7 +867,8 @@ _hist = [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'hi'}
              {'id': 'c1', 'name': 'get_overview', 'arguments': {}, 'extra': {'thoughtSignature': 'SIG'}},
              {'id': 'c2', 'name': 'list_components', 'arguments': {'depth': 2}, 'extra': {}}]},
          {'role': 'tool', 'tool_call_id': 'c1', 'name': 'get_overview', 'content': '{"document": "D"}'},
-         {'role': 'tool', 'tool_call_id': 'c2', 'name': 'list_components', 'content': '{"total": 0}'}]
+         {'role': 'tool', 'tool_call_id': 'c2', 'name': 'list_components', 'content': '{"total": 0}',
+          'images': [{'mime_type': 'image/png', 'data': 'QUJD'}]}]
 
 _sent.clear()
 _stream_tc = [json.dumps(x).encode('utf-8') for x in [
@@ -730,6 +883,7 @@ assert 'format' not in body and body['tools'][0]['function']['name'] == 'get_ove
 assert body['messages'][2] == {'role': 'assistant', 'content': 'Looking', 'tool_calls': [
     {'function': {'name': 'get_overview', 'arguments': {}}}, {'function': {'name': 'list_components', 'arguments': {'depth': 2}}}]}
 assert body['messages'][3] == {'role': 'tool', 'content': '{"document": "D"}', 'tool_name': 'get_overview'}
+assert body['messages'][4] == {'role': 'tool', 'content': '{"total": 0}', 'tool_name': 'list_components', 'images': ['QUJD']}
 
 _gsent.clear()
 _sse_tc = [b'data: ' + json.dumps({'candidates': [{'content': {'parts': [
@@ -747,9 +901,10 @@ assert g['systemInstruction'] == {'parts': [{'text': 'sys'}]}
 assert g['contents'][1] == {'role': 'model', 'parts': [
     {'text': 'Looking'}, {'functionCall': {'name': 'get_overview', 'args': {}}, 'thoughtSignature': 'SIG'},
     {'functionCall': {'name': 'list_components', 'args': {'depth': 2}}}]}
-assert g['contents'][2] == {'role': 'user', 'parts': [  # both results of the round in one turn
+assert g['contents'][2] == {'role': 'user', 'parts': [  # both results of the round in one turn, plus inlineData images
     {'functionResponse': {'name': 'get_overview', 'response': {'result': {'document': 'D'}}}},
-    {'functionResponse': {'name': 'list_components', 'response': {'result': {'total': 0}}}}]}
+    {'functionResponse': {'name': 'list_components', 'response': {'result': {'total': 0}}}},
+    {'inlineData': {'mimeType': 'image/png', 'data': 'QUJD'}}]}
 
 # Test log_transcript
 test_log_txt = '{"parameters": {}, "timeline": []}'
@@ -897,15 +1052,15 @@ assert inp == "mock_shell_input"
 from features.entities import draw as _draw
 
 class MockSKPt:
-    def __init__(self, x=0, y=0):
-        self.geometry = MockPoint3D(x, y, 0)
+    def __init__(self, x=0, y=0, z=0):
+        self.geometry = MockPoint3D(x, y, z)
         self.isFullyConstrained = False
         self.isFixed = False
 
 class MockSKLine:
     def __init__(self, p1, p2):
-        self.startSketchPoint = p1 if isinstance(p1, MockSKPt) else MockSKPt(p1.x, p1.y)
-        self.endSketchPoint = p2 if isinstance(p2, MockSKPt) else MockSKPt(p2.x, p2.y)
+        self.startSketchPoint = p1 if isinstance(p1, MockSKPt) else MockSKPt(p1.x, p1.y, getattr(p1, 'z', 0))
+        self.endSketchPoint = p2 if isinstance(p2, MockSKPt) else MockSKPt(p2.x, p2.y, getattr(p2, 'z', 0))
         self.isFullyConstrained = False
         self.isFixed = False
         self.isConstruction = False
@@ -981,7 +1136,7 @@ class MockFitPts:
 
 class MockSKFittedSpline:
     def __init__(self, coll):
-        pts = [p if isinstance(p, MockSKPt) else MockSKPt(p.x, p.y) for p in coll.items]
+        pts = [p if isinstance(p, MockSKPt) else MockSKPt(p.x, p.y, getattr(p, 'z', 0)) for p in coll.items]
         self._pts = pts
         self.fitPoints = MockFitPts(pts)
         self.startSketchPoint = pts[0]
@@ -1083,8 +1238,8 @@ def dummy_cm(v):
 def dummy_ex(v):
     return str(v)
 
-def dummy_pt(a, b):
-    return MockPoint3D(a, b, 0)
+def dummy_pt(a, b, c=0):
+    return MockPoint3D(a, b, c)
 
 # Test 1: Polyline sweep path with [0,0] corner
 sk1 = MockSketchObj()
@@ -1237,6 +1392,9 @@ _fails({"parameters": {}, "timeline": [_sk, {"op": "extrude", "id": "e", "sketch
         {"op": "chamfer", "distance": 1, "edges": {"feature": "e", "exclude": "ghost"}}]}, "'ghost'")
 _fails({"parameters": {}, "timeline": [_sk, {"op": "extrude", "id": "e", "sketch": "s", "distance": 5},
         {"op": "fillet", "radius": 1, "edges": {"feature": "e", "colour": "red"}}]}, 'unknown edge selector keys')
+_fails({"parameters": {"device": "Flipper Zero"}, "timeline": [_sk]}, 'parameters.device')
+_fails({"parameters": {"w": "missing_param + 2 mm"}, "timeline": [_sk]}, 'parameters.w')
+_fails({"parameters": {"flag": True}, "timeline": [_sk]}, 'parameters.flag')
 _poly = lambda **kw: {"parameters": {}, "timeline": [{"op": "sketch", "id": "p", "plane": "xy", "entities": [
     dict({"type": "regular_polygon", "center": [0, 0]}, **kw)]}]}
 validate(_poly(sides=6, across_flats="8 mm"))
@@ -1396,6 +1554,59 @@ _fails({"parameters": {}, "timeline": [
     {"op": "extrude", "id": "b", "sketch": "s", "distance": 10},
     {"op": "mirror", "feature": "b", "target": "b", "plane": "yz"},
 ]}, 'either feature or target')
+
+# 3D sketches ("plane": "3d") and loft feature
+sk3d = MockSketchObj()
+_ents3d = {}
+_draw(sk3d, {"type": "spline", "id": "rail3d", "points": [[20, 0, 0], [18, 5, 25], [15, 0, 50]]},
+      dummy_ex, dummy_cm, dummy_pt, _ents3d)
+assert len(sk3d.sketchCurves.splines_list) == 1
+assert round(sk3d.sketchCurves.splines_list[0].fitPoints.item(1).geometry.z, 3) == 2.5
+assert len(sk3d.sketchDimensions.dims) == 0  # 3D coordinates are placed in 3D space without 2D plane dimensions
+
+sk3d_poly = MockSketchObj()
+_draw(sk3d_poly, {"type": "polyline", "id": "wire3d", "points": [[0, 0, 0], [10, 0, 20], [10, 30, 40]]},
+      dummy_ex, dummy_cm, dummy_pt, {})
+assert len(sk3d_poly.sketchCurves.lines_list) == 2
+assert round(sk3d_poly.sketchCurves.lines_list[1].endSketchPoint.geometry.z, 3) == 4.0
+
+_loft_dsl = {
+    "parameters": {"base_w": "40 mm", "top_d": "20 mm", "loft_h": "50 mm", "mid_x": "16 mm"},
+    "timeline": [
+        {"op": "sketch", "id": "sec_bot", "plane": "xy", "entities": [
+            {"type": "center_rectangle", "center": [0, 0], "width": "base_w", "height": "base_w"}]},
+        {"op": "sketch", "id": "sec_top", "plane": "xy", "offset": "loft_h", "entities": [
+            {"type": "circle", "center": [0, 0], "diameter": "top_d"}]},
+        {"op": "sketch", "id": "guide_r", "plane": "3d", "entities": [
+            {"type": "spline", "points": [["base_w / 2", 0, 0], ["mid_x", 0, "loft_h / 2"], ["top_d / 2", 0, "loft_h"]]}]},
+        {"op": "loft", "id": "nozzle", "sketches": ["sec_bot", "sec_top"], "rails": ["guide_r"], "mode": "new_body"},
+    ],
+}
+validate(_loft_dsl)
+assert dsl_mod.placement_parameters(_loft_dsl) == {'base_w', 'mid_x', 'loft_h', 'top_d'}
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s3", "plane": "3d", "offset": "5 mm", "entities": [{"type": "line", "start": [0, 0, 0], "end": [1, 2, 3]}]},
+]}, 'do not take an offset')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s3", "plane": "3d", "entities": [{"type": "line", "start": [0, 0], "end": [1, 2]}]},
+]}, '3D points [x, y, z]')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s2", "plane": "xy", "entities": [{"type": "line", "start": [0, 0, 0], "end": [1, 2, 3]}]},
+]}, 'require "plane": "3d"')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s1", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]},
+    {"op": "loft", "sketches": ["s1"]},
+]}, 'at least 2 sketch ids')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s1", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]},
+    {"op": "sketch", "id": "s2", "plane": "xy", "offset": 20, "entities": [{"type": "circle", "center": [0, 0], "diameter": 5}]},
+    {"op": "loft", "sketches": ["s1", "s2"], "rails": ["s1"], "centerline": "s2"},
+]}, 'both rails and centerline')
+_fails({"parameters": {}, "timeline": [
+    {"op": "sketch", "id": "s1", "plane": "xy", "entities": [{"type": "circle", "center": [0, 0], "diameter": 10}]},
+    {"op": "sketch", "id": "s2", "plane": "xy", "offset": 20, "entities": [{"type": "circle", "center": [0, 0], "diameter": 5}]},
+    {"op": "loft", "sketches": ["s1", "ghost"]},
+]}, "unknown section sketch 'ghost'")
 
 # Test 5f3: assemblies. Components have their own timelines (own sketch ids); instances place copies
 import copy as _copy
@@ -1686,7 +1897,7 @@ _feat_src = '\n'.join(
     p.read_text(encoding='utf-8') for p in (_HERE / 'features').glob('*.py')
     if p.name != 'base.py' and not p.name.startswith('_')
 )
-for _call in ('feats.createInput', 'revolves.createInput', 'sweeps.createInput(prof_arg', 'sweeps.createInput(prof,'):
+for _call in ('feats.createInput', 'revolves.createInput', 'sweeps.createInput(prof_arg', 'sweeps.createInput(prof,', 'lofts.createInput'):
     assert f'h.own_bodies({_call}' in _feat_src, _call                 # every feature that can cut is limited
 
 # Bill of materials: expressions are evaluated without Fusion
@@ -3121,6 +3332,7 @@ for caps, expect in (({'thinking': False}, False), ({'thinking': True}, True), (
     H.pump(H.idle)
     assert H.last_ai()['status'] == 'done', H.last_ai()
     assert SP.opts[-1].think is expect, (caps, SP.opts[-1])
+assert SP.opts[-1].tools is not None and 'web_search' in [x.name for x in SP.opts[-1].tools]  # unknown model (caps=None) still gets tools
 E2E_OPTS.clear()
 e2e._models_cache.clear()
 
@@ -3147,6 +3359,24 @@ _c = e2e._store().active()
 assert [m['role'] for m in _c.messages] == ['user', 'assistant'] and 'tool_calls' not in _c.messages[-1]
 assert 'design' in e2e._store().tool_state  # each toolkit's state is kept with the document
 assert 'tool_state' in json.loads(e2e._store().to_json())
+
+# 15a. Off-main-thread tools (WebToolkit, main_thread=False) run on the worker thread and still report to the panel
+_worker_threads = []
+with unittest.mock.patch('urllib.request.urlopen',
+                         side_effect=lambda req, timeout=None: (_worker_threads.append(threading.current_thread()),
+                                                                _mock_web_open(req, timeout))[1]):
+    SP.replies = [e2e.providers.Reply('Searching specs.', [
+        e2e.providers.ToolCall('w1', 'web_search', {'query': 'Raspberry Pi 5 dimensions'})]), _lid]
+    SP.seen.clear()
+    H.act('send', text='a Raspberry Pi 5 tray')
+    H.pump(H.idle)
+t_web = H.last_ai()
+assert t_web['status'] == 'done', t_web
+assert t_web['tools'] == [{'name': 'web_search', 'label': 'Searched the web for “Raspberry Pi 5 dimensions” · 2'}]
+assert _worker_threads and all(th is not threading.main_thread() for th in _worker_threads)
+assert '85 mm x 56 mm' in SP.seen[1][-1]['content']
+_e2e_log_txt = e2e.llm.LOG_FILE.read_text(encoding='utf-8')
+assert 'TOOL CALL (scripted/m): web_search(' in _e2e_log_txt and '--- TOOLS ---' in _e2e_log_txt
 
 # 15b. A toolkit that needs images is offered only to models that can see them
 class _NeedsEyes(e2e.toolbox.BaseToolkit):
@@ -3239,7 +3469,7 @@ import features.entities as _ent_reg
 
 _all_feats = _feat_reg.get_all_features()
 _feat_ops = [f.op for f in _all_feats]
-assert len(_feat_ops) == 13
+assert len(_feat_ops) == 14
 assert [(f.order, f.op) for f in _all_feats] == sorted((f.order, f.op) for f in _all_feats)
 
 _all_ents = _ent_reg.get_all_entities()
@@ -3912,8 +4142,179 @@ setTimeout(() => {
   process.exit(ok ? 0 : 1);
 }, 350);
 '''
-    _res = _subprocess.run([_node_bin, '-e', _js_probe], capture_output=True, text=True, timeout=10)
+    _res = _subprocess.run([_node_bin, '-'], input=_js_probe, encoding='utf-8', capture_output=True, text=True, timeout=10)
     assert _res.returncode == 0, (_res.stdout, _res.stderr)
+
+    # Also test palette/app.js in Node: delayed adsk handshake, tool labels in renderTools, streaming, and stop/send
+    _app_js = (_HERE / 'palette' / 'app.js').read_text(encoding='utf-8')
+    _app_probe = '''
+class FakeNode {
+  constructor(tag = 'div', text = '') {
+    this.tag = tag;
+    this.className = '';
+    this.id = '';
+    this.value = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.open = false;
+    this.title = '';
+    this.placeholder = '';
+    this.scrollTop = 0;
+    this.scrollHeight = 100;
+    this.clientHeight = 100;
+    this.offsetWidth = 200;
+    this.offsetHeight = 100;
+    this.attrs = {};
+    this.dataset = {};
+    this.style = {};
+    this.children = [];
+    this.listeners = {};
+    this._text = text;
+    this.classList = {
+      toggle: (c, on) => {
+        const s = new Set(this.className.split(/\\s+/).filter(Boolean));
+        if (on === undefined ? !s.has(c) : on) s.add(c); else s.delete(c);
+        this.className = [...s].join(' ');
+      },
+    };
+  }
+  get textContent() {
+    return this.children.length ? this.children.map((c) => c.textContent).join('') : this._text;
+  }
+  set textContent(v) {
+    this.children = [];
+    this._text = String(v ?? '');
+  }
+  append(...kids) {
+    for (const k of kids) {
+      if (k == null || k === false) continue;
+      const n = k instanceof FakeNode ? k : new FakeNode('#text', String(k));
+      n.parent = this;
+      this.children.push(n);
+    }
+  }
+  replaceChildren(...kids) {
+    this.children = [];
+    this.append(...kids);
+  }
+  replaceWith(n) {
+    if (!this.parent) return;
+    const i = this.parent.children.indexOf(this);
+    if (i >= 0) { n.parent = this.parent; this.parent.children[i] = n; }
+  }
+  remove() {
+    if (!this.parent) return;
+    this.parent.children = this.parent.children.filter((c) => c !== this);
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = String(v);
+    if (k === 'id') this.id = String(v);
+    if (k.startsWith('data-')) this.dataset[k.slice(5)] = String(v);
+  }
+  removeAttribute(k) { delete this.attrs[k]; }
+  addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
+  trigger(ev, e = {}) { for (const fn of this.listeners[ev] || []) fn(e); }
+  focus() {}
+  blur() {}
+  contains() { return false; }
+  getBoundingClientRect() { return { top: 0, bottom: 20, left: 0, right: 100 }; }
+  matches(sel) {
+    if (sel === '[data-turn="t1"]') return this.attrs['data-turn'] === 't1';
+    if (sel === '.thinking summary .count') return this.className === 'count' && this.parent && this.parent.tag === 'summary';
+    if (sel.startsWith('.')) return this.className.split(/\\s+/).includes(sel.slice(1));
+    return this.tag === sel;
+  }
+  querySelectorAll(sel) {
+    const out = [];
+    const walk = (n) => {
+      for (const c of n.children || []) {
+        if (c.matches && c.matches(sel)) out.push(c);
+        walk(c);
+      }
+    };
+    walk(this);
+    return out;
+  }
+  querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+}
+global.Node = FakeNode;
+global.window = global;
+global.window.addEventListener = () => {};
+global.innerWidth = 640;
+global.innerHeight = 800;
+global.location = { search: '' };
+global.requestAnimationFrame = (fn) => fn();
+global.CSS = { escape: (s) => s };
+const byId = new Map();
+const getEl = (id) => {
+  if (!byId.has(id)) { const n = new FakeNode('div'); n.id = id; byId.set(id, n); }
+  return byId.get(id);
+};
+global.document = {
+  documentElement: new FakeNode('html'),
+  activeElement: null,
+  createElement: (t) => new FakeNode(t),
+  createElementNS: (_ns, t) => new FakeNode(t),
+  createTextNode: (txt) => new FakeNode('#text', txt),
+  getElementById: getEl,
+  addEventListener: () => {},
+  querySelector: (sel) => getEl('threadInner').querySelector(sel),
+};
+const sent = [];
+setTimeout(() => {
+  window.adsk = {
+    fusionSendData(action, data) {
+      sent.push([action, JSON.parse(data || '{}')]);
+      if (action === 'ready') {
+        window.fusionJavaScriptHandler.handle('event', JSON.stringify({
+          type: 'state', active_provider: 'p1', busy: true, components: true,
+          general: { theme: 'dark', auto_fix: 2, default_mode: 'component' },
+          providers: [{ id: 'p1', name: 'Local', short_name: 'Loc', schema: [], values: {}, model: 'm1', model_options: {}, models: [], configured: true }],
+          chats: [{ id: 'c1', title: 'Pi Tray', versions: 0 }],
+          chat: {
+            id: 'c1', title: 'Pi Tray', current: null, versions: [], target: { mode: 'component', occ: null },
+            turns: [
+              { id: 'u1', role: 'user', text: 'make a tray', is_json: false },
+              { id: 't1', role: 'assistant', kind: 'model', status: 'thinking', thought: 'let me check', tools: [] },
+            ],
+          },
+        }));
+        window.fusionJavaScriptHandler.handle('event', JSON.stringify({
+          type: 'stream', chat_id: 'c1', turn_id: 't1',
+          tool: { name: 'web_search', label: 'Searched the web for “Pi 5” · 3' },
+        }));
+        window.fusionJavaScriptHandler.handle('event', JSON.stringify({
+          type: 'stream', chat_id: 'c1', turn_id: 't1',
+          tool: { name: 'fetch_web_page', label: 'Read wikipedia.org · Raspberry Pi' },
+        }));
+        window.fusionJavaScriptHandler.handle('event', JSON.stringify({
+          type: 'stream', chat_id: 'c1', turn_id: 't1', status: 'building',
+          progress: { done: 2, total: 4, label: 'extrude base' },
+        }));
+      }
+      return '';
+    },
+  };
+}, 120);
+''' + _app_js + '''
+setTimeout(() => {
+  const turn = getEl('threadInner').querySelector('[data-turn="t1"]');
+  const toolsBox = turn && turn.querySelector('.tools');
+  const progBox = turn && turn.querySelector('.build-progress');
+  getEl('send').trigger('click');
+  const ok = sent.length === 2
+    && sent[0][0] === 'ready'
+    && sent[1][0] === 'stop'
+    && document.documentElement.dataset.theme === 'dark'
+    && toolsBox && toolsBox.textContent.includes('Read wikipedia.org · Raspberry Pi · 2 steps')
+    && toolsBox.textContent.includes('Searched the web for “Pi 5” · 3')
+    && progBox && progBox.textContent.includes('extrude base') && progBox.textContent.includes('2 / 4');
+  if (!ok) console.error('FAIL', { sent, tools: toolsBox && toolsBox.textContent, prog: progBox && progBox.textContent });
+  process.exit(ok ? 0 : 1);
+}, 350);
+'''
+    _res_app = _subprocess.run([_node_bin, '-'], input=_app_probe, encoding='utf-8', capture_output=True, text=True, timeout=10)
+    assert _res_app.returncode == 0, (_res_app.stdout, _res_app.stderr)
 
 assert e2e._bom_palette() is not None
 e2e._bom_palette().deleteMe()

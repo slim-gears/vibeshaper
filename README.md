@@ -140,8 +140,6 @@ VibeShaper keeps your settings (including API keys) and its logs in your user fo
 * **Your own features**: if you added features after a VibeShaper part, you're asked before it's replaced.
 * **Keys**: `Enter` send · `Shift+Enter` new line · `Esc` stop · `Ctrl+Shift+O` new chat.
 
-To work on the panel's look without Fusion, serve the `palette/` folder (e.g. `python -m http.server --directory palette`) and open `index.html?mock&demo`; it runs against a built-in mock back end.
-
 ---
 
 ## 💡 Example Prompts

@@ -1,7 +1,7 @@
 """Sketch timeline feature."""
 import sys
 
-from .base import BaseFeature, JS_LEN, JS_PLANE, PLANES
+from .base import BaseFeature, JS_LEN, JS_PLANE, PLANES, SKETCH_PLANES
 from . import _helpers as h
 from . import entities
 
@@ -17,10 +17,11 @@ class SketchFeature(BaseFeature):
     target_key = None
     prompt = (
         'Sketch:\n'
-        '   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz", "offset": length (optional), '
+        '   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz"|"3d", "offset": length (optional, 2D planes only), '
         '"entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal"|"coincident", '
         '"entities": [id1, id2]}, {"type": "midpoint", "point": pt_id, "entity": line_id}, '
-        '{"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}'
+        '{"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}\n'
+        '   (With `"plane": "3d"`, open/closed 3D curves use world coordinates `[x, y, z]` for 3D sweep paths or loft guide rails.)'
     )
 
     def __init__(self):
@@ -64,15 +65,18 @@ class SketchFeature(BaseFeature):
 
     def validate(self, step, where, ctx):
         h.need(step, where, 'id', 'plane', 'entities')
-        if step['plane'] not in PLANES:
-            raise ValueError(f'{where}: plane must be one of {PLANES}')
+        if step['plane'] not in SKETCH_PLANES:
+            raise ValueError(f'{where}: plane must be one of {SKETCH_PLANES}')
+        is_3d = step['plane'] == '3d'
+        if is_3d and step.get('offset') not in (None, 0, '0', '0 mm'):
+            raise ValueError(f'{where}: 3d sketches do not take an offset')
         if step['id'] in ctx.sketches:
             raise ValueError(f'{where}: duplicate sketch id {step["id"]!r}')
         if not isinstance(step['entities'], list) or not step['entities']:
             raise ValueError(f'{where}: entities must be a non-empty list')
         ent_ids = set()
         for j, e in enumerate(step['entities']):
-            entities.validate_entity(e, f'{where}.entities[{j}]', ent_ids)
+            entities.validate_entity(e, f'{where}.entities[{j}]', ent_ids, dim=3 if is_3d else 2)
 
         if 'constraints' in step:
             if not isinstance(step['constraints'], list):
@@ -96,20 +100,30 @@ class SketchFeature(BaseFeature):
         import adsk.core
 
         P = adsk.core.Point3D.create
-        plane = ctx.base_planes[step['plane']]
+        is_3d = step['plane'] == '3d'
+        plane = ctx.base_planes['xy' if is_3d else step['plane']]
         off = step.get('offset')
-        if off not in (None, 0, '0', '0 mm'):
+        if not is_3d and off not in (None, 0, '0', '0 mm'):
             pi = ctx.root.constructionPlanes.createInput()
             pi.setByOffset(plane, adsk.core.ValueInput.createByString(ctx.ex(off)))
             plane = ctx.root.constructionPlanes.add(pi)
         sk = ctx.root.sketches.add(plane)
         sk.name = str(step['id'])
-        to_world = ctx.world[step['plane']]
+        if hasattr(sk, 'is3D') and is_3d:
+            try:
+                sk.is3D = True
+            except Exception:
+                pass
+        if is_3d:
+            def pt(x, y, z=0, sk=sk):
+                return sk.modelToSketchSpace(P(x, y, z))
+        else:
+            to_world = ctx.world[step['plane']]
 
-        def pt(a, b, sk=sk, to_world=to_world):
-            p = sk.modelToSketchSpace(P(*to_world(a, b)))
-            p.z = 0
-            return p
+            def pt(a, b, sk=sk, to_world=to_world):
+                p = sk.modelToSketchSpace(P(*to_world(a, b)))
+                p.z = 0
+                return p
 
         ent_map = {}
         for e in step['entities']:
@@ -149,3 +163,6 @@ class SketchFeature(BaseFeature):
 
         # Never fix geometry: fixed curves ignore later parameter changes.
         ctx.sketches[step['id']] = sk
+
+    def rebuild_refs(self, step):
+        return step.get('entities') if step.get('plane') == '3d' else None

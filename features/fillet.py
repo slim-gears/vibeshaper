@@ -18,7 +18,11 @@ class FilletFeature(BaseFeature):
     )
     rules = (
         '- For rounded corners or chamfered rims, use `fillet` or `chamfer` with edge selectors '
-        '(`"vertical"`, `"top"`, `"circular"`).'
+        '(`"vertical"`, `"top"`, `"circular"`).\n'
+        '- Apply `"vertical"` corner fillets AFTER joining perimeter walls/lips (or use `shell` on a filleted block); '
+        'never fillet a base plate\'s vertical corners and then join an unfilleted rectangle on top of it.\n'
+        '- When filleting `"top"` or `"bottom"` edges of a thin wall of thickness `t`, keep `radius < t / 2` '
+        '(e.g. `0.5 mm` on a `2 mm` wall) so the inner and outer edge fillets do not collide.'
     )
 
     def validate(self, step, where, ctx):

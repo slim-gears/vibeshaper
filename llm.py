@@ -218,7 +218,8 @@ def get_provider(provider_id):
     return prov
 
 
-def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text='', error=None, attempt=1):
+def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text='', error=None, attempt=1,
+                   tool_trace=None):
     """Append a full record of the LLM call to vibeshaper.log and overwrite last_response.txt."""
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     sep = '=' * 80
@@ -229,6 +230,11 @@ def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text=
         '--- USER / PROMPT ---',
         prompt_str.strip(),
     ]
+    if tool_trace:
+        entry.extend([
+            '--- TOOLS ---',
+            '\n'.join(str(t) for t in tool_trace),
+        ])
     if thinking_text and thinking_text.strip():
         entry.extend([
             '--- THINKING ---',
@@ -246,7 +252,17 @@ def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text=
         ''
     ])
     block = '\n'.join(entry) + '\n'
+    _append_log(block)
 
+    if response_text:
+        try:
+            with open(LAST_RESPONSE_FILE, 'w', encoding='utf-8') as f:
+                f.write(response_text)
+        except Exception:
+            pass
+
+
+def _append_log(block):
     try:
         if LOG_FILE.exists() and LOG_FILE.stat().st_size > 5 * 1024 * 1024:
             old = LOG_FILE.with_suffix('.log.old')
@@ -258,12 +274,20 @@ def log_transcript(provider, model, prompt_or_msg, response_text, thinking_text=
     except Exception as e:
         sys.stderr.write(f"VibeShaper: failed to write log: {e}\n")
 
-    if response_text:
-        try:
-            with open(LAST_RESPONSE_FILE, 'w', encoding='utf-8') as f:
-                f.write(response_text)
-        except Exception:
-            pass
+
+def log_tool_call(provider, model, name, arguments, result, thinking_text=''):
+    """Append an immediate record of a tool call to vibeshaper.log so progress is visible mid-turn."""
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    clean_res = {k: f'[{len(v)} images]' if k == 'images' and isinstance(v, list) else v
+                 for k, v in result.items()} if isinstance(result, dict) else result
+    res_str = json.dumps(clean_res, default=str)
+    if len(res_str) > 1500:
+        res_str = res_str[:1500] + '... (truncated)'
+    lines = [f'[{now}] TOOL CALL ({provider}/{model}): {name}({json.dumps(arguments, default=str)})']
+    if thinking_text and thinking_text.strip():
+        lines.append(f'  thought: {thinking_text.strip()[-400:]}')
+    lines.append(f'  -> {res_str}\n')
+    _append_log('\n'.join(lines))
 
 
 def generate(provider_id, values, model, messages, think=False, tries=3, on_chunk=None, stop_event=None,
@@ -277,6 +301,7 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
     tool_defs = [providers.ToolDef(t['name'], t['description'], t['parameters']) for t in tools] \
         if tools and run_tool else None
     used = 0
+    tool_trace = []
     request = next((m.get('content', '') for m in reversed(messages) if m.get('role') == 'user'), '')
     err = None
     attempt = 0
@@ -305,7 +330,8 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
         except Exception as e:
             if stopped():
                 raise InterruptedError('Generation cancelled by user')
-            log_transcript(provider_id, model, request, '', ''.join(thoughts), error=f"Network/API Error: {e}", attempt=attempt + 1)
+            log_transcript(provider_id, model, request, '', ''.join(thoughts), error=f"Network/API Error: {e}",
+                           attempt=attempt + 1, tool_trace=tool_trace)
             raise
 
         if stopped():
@@ -313,8 +339,9 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
 
         text, calls = (reply.text or '', list(reply.tool_calls)) if isinstance(reply, providers.Reply) else (reply, [])
         if calls and offer:
+            th_round = ''.join(thoughts)
             messages.append({'role': 'assistant', 'content': text, 'tool_calls': [c.to_message() for c in calls]})
-            for c in calls:
+            for idx, c in enumerate(calls):
                 if stopped():
                     raise InterruptedError('Generation cancelled by user')
                 used += 1
@@ -322,8 +349,16 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
                     result = {'error': 'No more tool calls for this request. Reply with the JSON design now.'}
                 else:
                     result = run_tool(c.name, c.arguments)
-                messages.append({'role': 'tool', 'tool_call_id': c.id, 'name': c.name,
-                                 'content': json.dumps(result, default=str)})
+                imgs = result.get('images') if isinstance(result, dict) and isinstance(result.get('images'), list) else None
+                body = {k: v for k, v in result.items() if k != 'images'} if imgs else result
+                res_json = json.dumps(body, default=str)
+                tool_trace.append(f'{c.name}({json.dumps(c.arguments, default=str)}) -> {res_json[:300]}')
+                log_tool_call(provider_id, model, c.name, c.arguments, result,
+                              thinking_text=th_round if idx == 0 else '')
+                msg = {'role': 'tool', 'tool_call_id': c.id, 'name': c.name, 'content': res_json}
+                if imgs:
+                    msg['images'] = imgs
+                messages.append(msg)
             log(f'VibeShaper: model called {", ".join(c.name for c in calls)} ({used} tool calls so far)')
             continue
 
@@ -333,12 +368,14 @@ def generate(provider_id, values, model, messages, think=False, tries=3, on_chun
         try:
             d = json.loads(clean_json(text))
             dsl.validate(d)
-            log_transcript(provider_id, model, request, text, th_str, error=None, attempt=attempt)
+            log_transcript(provider_id, model, request, text, th_str, error=None, attempt=attempt,
+                           tool_trace=tool_trace)
             return d
         except ValueError as e:  # JSONDecodeError is a ValueError
             err = str(e)
             log(f'VibeShaper: invalid DSL ({err}):\n{text}')
-            log_transcript(provider_id, model, request, text, th_str, error=err, attempt=attempt)
+            log_transcript(provider_id, model, request, text, th_str, error=err, attempt=attempt,
+                           tool_trace=tool_trace)
             messages.append({'role': 'user', 'content': fix_request(err)})
     raise ValueError(f'model gave invalid DSL {tries} times; last error: {err}')
 

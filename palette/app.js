@@ -80,17 +80,19 @@
   };
 
   // ---------------------------------------------------------------- bridge
-  let backend = null;
+  function hasBridge() {
+    return typeof window.adsk !== 'undefined' && typeof window.adsk.fusionSendData === 'function';
+  }
 
   function send(action, payload) {
     const data = JSON.stringify(payload || {});
     try {
-      return Promise.resolve(backend(action, data));
+      if (hasBridge()) return Promise.resolve(window.adsk.fusionSendData(action, data));
     } catch (e) {
       console.error('VibeShaper bridge error', e);
       toast('Could not reach VibeShaper');
-      return Promise.resolve('');
     }
+    return Promise.resolve('');
   }
 
   window.fusionJavaScriptHandler = {
@@ -105,14 +107,8 @@
   };
 
   function connect() {
-    const start = Date.now();
-    const forceMock = /[?&]mock\b/.test(location.search);
     (function attempt() {
-      if (!forceMock && window.adsk && typeof window.adsk.fusionSendData === 'function') {
-        backend = (action, data) => window.adsk.fusionSendData(action, data);
-        send('ready');
-      } else if (forceMock || Date.now() - start > 1200) {
-        backend = MockBackend.create(onEvent);
+      if (hasBridge()) {
         send('ready');
       } else {
         setTimeout(attempt, 50);
@@ -355,14 +351,16 @@
     return d;
   }
 
-  // What the model looked at in the user's design (read-only tool calls)
+  // What tools the model called during this turn (design inspection, web search, etc.)
   const openTools = new Set();  // turns whose list the user opened; kept across re-renders
   function renderTools(t, live) {
     const tools = t.tools || [];
     if (!tools.length) return null;
     const failed = tools.filter((x) => /\(failed:/.test(x.label)).length;
-    const label = live && t.status === 'thinking' ? `Looking at your design · ${plural(tools.length, 'step')}`
-      : `Looked at your design · ${plural(tools.length, 'step')}` + (failed ? ` · ${failed} failed` : '');
+    const last = tools[tools.length - 1].label || 'Used tools';
+    const label = live && t.status === 'thinking'
+      ? `${last}${tools.length > 1 ? ` · ${plural(tools.length, 'step')}` : ''}`
+      : (tools.length === 1 ? last : `${last} · ${plural(tools.length, 'step')}`) + (failed ? ` · ${failed} failed` : '');
     const d = h('details', { class: 'tools' },
       h('summary', null, icon('chevron', 'i-sm chev'), icon('search', 'i-sm'), h('span', { text: label })),
       h('ol', { class: 'tool-list' }, tools.map((x) => h('li', { class: /\(failed:/.test(x.label) ? 'err' : '', text: x.label }))));
@@ -1146,330 +1144,6 @@
     });
     applyTheme();
   }
-
-  // ======================================================================
-  // MockBackend: stands in for VibeShaper.py when the panel runs in a browser.
-  // Mirrors the event shapes the add-in sends.
-  // ======================================================================
-  const MockBackend = {
-    create(emit) {
-      const uid = () => Math.random().toString(16).slice(2, 10);
-      const now = () => Date.now() / 1000;
-      const providers = [
-        { id: 'ollama', name: 'Ollama (Local)', short_name: 'Ollama', schema: [
-          { key: 'url', label: 'Ollama URL', type: 'string', tooltip: 'Your local or remote Ollama server', required: true, refreshes_models: true }],
-          values: { url: 'http://localhost:11434' }, model: 'qwen3:8b', model_options: { 'qwen3:8b': { think: true } }, models: [], configured: true },
-        { id: 'gemini', name: 'Google Gemini', short_name: 'Gemini', schema: [
-          { key: 'api_key', label: 'Gemini API key', type: 'secret', tooltip: 'From Google AI Studio, or set GEMINI_API_KEY', required: true, refreshes_models: true }],
-          values: { api_key: '' }, model: '', model_options: {}, models: [], configured: false },
-        { id: 'openai_compat', name: 'OpenAI-compatible', short_name: 'OpenAI-compatible', schema: [
-          { key: 'url', label: 'Base URL', type: 'string', tooltip: 'e.g. LM Studio or vLLM: http://localhost:1234/v1', required: true, refreshes_models: true },
-          { key: 'api_key', label: 'API key', type: 'secret', tooltip: 'Leave empty if the server needs none', required: false, refreshes_models: true },
-          { key: 'temperature', label: 'Temperature', type: 'number', tooltip: 'Lower is more predictable', minimum: 0, maximum: 2 },
-          { key: 'effort', label: 'Reasoning effort', type: 'select', tooltip: 'For reasoning models', options: [
-            { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }] }],
-          values: { url: '', api_key: '', temperature: 0.2, effort: 'medium' }, model: '', model_options: {}, models: [], configured: false },
-      ];
-      const mm = (id, caps = '', label = id) => ({ id, label, images: caps.includes('i'), thinking: caps.includes('t'), tools: caps.includes('f') });
-      const MODELS = {
-        ollama: [mm('deepseek-r1:8b', 't'), mm('gemma3:12b', 'i'), mm('llama3.1:8b', 'f'), mm('mistral-small3.2:24b', 'if'),
-          mm('qwen2.5-coder:7b', 'f'), mm('qwen2.5vl:7b', 'i'), mm('qwen3:14b', 'tf'), mm('qwen3:8b', 'tf')],
-        gemini: [mm('gemini-2.0-flash', 'if', 'Gemini 2.0 Flash'), mm('gemini-2.5-flash', 'itf', 'Gemini 2.5 Flash'), mm('gemini-2.5-pro', 'itf', 'Gemini 2.5 Pro')],
-        openai_compat: [mm('local-model')],
-      };
-      const isReady = (p) => p.schema.every((f) => !f.required || String(p.values[f.key] ?? '').trim());
-      const general = { theme: 'system', auto_fix: 2, default_mode: 'component' };
-      let active = 'ollama';
-      let chats = [];
-      let cur = null;
-      let busy = false;
-      let timers = [];
-
-      const elbow = (thick) => ({
-        name: 'pipe_elbow',
-        parameters: { pipe_od: '30 mm', pipe_wall: '3 mm', bend_r: '80 mm', flange_dia: '80 mm', flange_thick: thick, bolt_dia: '6 mm', bolt_circle: '60 mm', bolt_qty: '6' },
-        timeline: [
-          { op: 'sketch', id: 'path_sk', plane: 'xz', entities: [{ type: 'polyline', points: [[0, 'bend_r'], [0, 0], ['bend_r', 0]] }] },
-          { op: 'sketch', id: 'outer_sk', plane: 'xy', offset: 'bend_r', entities: [{ type: 'circle', center: [0, 0], diameter: 'pipe_od' }] },
-          { op: 'sweep', id: 'pipe', sketch: 'outer_sk', path: 'path_sk', mode: 'new_body' },
-          { op: 'sketch', id: 'flange_sk', plane: 'xy', offset: 'bend_r - flange_thick', entities: [{ type: 'circle', center: [0, 0], diameter: 'flange_dia' }] },
-          { op: 'extrude', id: 'flange', sketch: 'flange_sk', distance: 'flange_thick', mode: 'join' },
-          { op: 'circular_pattern', feature: 'flange', axis: 'z', quantity: 'bolt_qty' },
-        ],
-      });
-
-      const THOUGHT = 'The user wants a 90° elbow. I will sweep a 30 mm circle along an L-shaped path with an 80 mm leg, then hollow it with a second cut sweep for the bore. ' +
-        'The flange sits on the vertical leg: an 80 mm disc, extruded by flange_thick. Bolt holes: one 6 mm hole at 30 mm radius, then a circular pattern of 6. ' +
-        'All dimensions become parameters so they can be changed later.';
-
-      const view = () => cur && JSON.parse(JSON.stringify(cur));
-      const summaries = () => chats.filter((c) => c.turns.length).map((c) => ({ id: c.id, title: c.title, versions: c.versions.length }));
-      const pushChat = () => emit({ type: 'chat', chat: view(), chats: summaries(), busy });
-      const later = (ms, fn) => timers.push(setTimeout(fn, ms));
-      const newChat = () => { cur = { id: uid(), title: 'New chat', turns: [], versions: [], current: null, target: { mode: null, occ: null } }; chats.push(cur); };
-      const placement = (dsl) => {
-        const m = cur.target.mode || general.default_mode;
-        if (m === 'component') return { mode: m, label: String((cur.versions[0] || { dsl }).dsl.name || cur.title).replace(/_/g, ' ').slice(0, 40) };
-        return { mode: 'new_body', label: null };
-      };
-
-      function addVersion(dsl, source) {
-        const n = cur.versions.length ? cur.versions[cur.versions.length - 1].n + 1 : 1;
-        const pm = {};
-        Object.keys(dsl.parameters || {}).forEach((k) => { pm[k] = k; });
-        cur.versions.push({ n, dsl, source, param_map: pm, feature_count: dsl.timeline.length + 2, placement: placement(dsl) });
-        const replaced = cur.current;
-        cur.current = n;
-        return { n, replaced };
-      }
-
-      function finish(turn, dsl, source) {
-        const { n, replaced } = addVersion(dsl, source);
-        turn.status = 'done'; turn.version = n; turn.replaced = replaced;
-        busy = false;
-        pushChat();
-      }
-
-      const MOCK_TOOLS = [
-        { name: 'get_overview', label: 'Looked at the design overview' },
-        { name: 'get_selection', label: 'Checked your selection · 1' },
-        { name: 'get_body', label: 'Inspected body b3 · Housing' },
-        { name: 'get_timeline', label: 'Read the timeline · 14' },
-      ];
-
-      function runModel(turn, text) {
-        busy = true;
-        turn.status = 'thinking';
-        pushChat();
-        const words = THOUGHT.split(/(\s+)/);
-        let i = 0;
-        let looked = 0;
-        const tick = () => {
-          if (!busy) return;
-          if (looked < MOCK_TOOLS.length) {  // the model looks at the design first
-            const tool = MOCK_TOOLS[looked++];
-            (turn.tools = turn.tools || []).push(tool);
-            emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, tool });
-            later(350, tick);
-            return;
-          }
-          if (i < words.length) {
-            const chunk = words.slice(i, i + 6).join('');
-            i += 6;
-            turn.thought += chunk;
-            emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, thought_append: chunk });
-            later(70, tick);
-          } else {
-            turn.status = 'writing';
-            emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, status: 'writing', chars: 0 });
-            let chars = 0;
-            const demoBuild = (then) => {  // the build reports each step, as the add-in does
-              const names = ['Creating parameters', 'sketch flange_sk', 'extrude flange_body', 'sketch path_sk',
-                'sweep pipe', 'fillet', 'circular_pattern bolt_cut', 'thread port_cut', 'Done'];
-              let k = 0;
-              const step = () => {
-                if (!busy) return;
-                emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, progress: { done: k, total: names.length - 1, label: names[k] } });
-                if (k++ < names.length - 1) later(260, step); else later(200, then);
-              };
-              step();
-            };
-            const write = () => {
-              if (!busy) return;
-              chars += 180;
-              if (chars < 1400) { emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, chars }); later(90, write); return; }
-              turn.status = 'building';
-              emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, status: 'building' });
-              demoBuild(() => {
-                if (/fail/i.test(text)) {
-                  turn.status = 'error'; busy = false;
-                  turn.attempts = [{ error: "timeline[2] (sweep): profile is not perpendicular to the path" }, { error: 'timeline[2] (sweep): profile is not perpendicular to the path' }];
-                  turn.error = 'VibeShaper: build failed 3 times\ntimeline[2] (sweep): profile is not perpendicular to the path\nTraceback (most recent call last):\n  File "dsl.py", line 1001, in execute';
-                  pushChat();
-                } else if (/fix/i.test(text)) {
-                  turn.attempts = [{ error: 'timeline[4] (extrude): sketch "flange_sk" has no closed profiles' }];
-                  emit({ type: 'stream', chat_id: cur.id, turn_id: turn.id, attempt_error: turn.attempts[0].error });
-                  later(900, () => finish(turn, elbow('10 mm'), 'model'));
-                } else if (/after/i.test(text) && cur.current) {
-                  turn.status = 'confirm'; turn.confirm = { count: 2 };
-                  pushChat();
-                } else {
-                  finish(turn, elbow(cur.versions.length ? '12 mm' : '8 mm'), 'model');
-                }
-              });
-            };
-            later(120, write);
-          }
-        };
-        later(350, tick);
-      }
-
-      function sendText(text) {
-        if (!cur) newChat();
-        if (!cur.turns.length) cur.title = text.trim().startsWith('{') ? 'Imported design' : (text.length > 46 ? text.slice(0, 45) + '…' : text);
-        const isJson = text.trim().startsWith('{');
-        cur.turns.push({ id: uid(), role: 'user', text, is_json: isJson, ts: now() });
-        const turn = { id: uid(), role: 'assistant', kind: isJson ? 'json' : 'model', status: isJson ? 'building' : 'thinking', thought: '', version: null, replaced: null, attempts: [], error: null, request: text, ts: now() };
-        cur.turns.push(turn);
-        if (isJson) {
-          busy = true; pushChat();
-          let d;
-          try { d = JSON.parse(text); } catch (e) { turn.status = 'error'; turn.error = 'Invalid JSON: ' + e.message; busy = false; pushChat(); return; }
-          later(600, () => finish(turn, d, 'json'));
-        } else {
-          runModel(turn, text);
-        }
-      }
-
-      function seedDemo() {
-        newChat();
-        cur.title = 'A 90-degree pipe elbow with 30mm outer diameter…';
-        cur.turns.push({ id: uid(), role: 'user', text: 'A 90-degree pipe elbow with 30mm outer diameter, 3mm wall, swept over an 80mm radius, with an 80mm round mounting flange with 6 bolt holes on a 60mm bolt circle.', ts: now() });
-        const a1 = { id: uid(), role: 'assistant', kind: 'model', status: 'done', thought: THOUGHT, attempts: [{ error: 'timeline[4] (extrude): sketch "flange_sk" has no closed profiles' }], request: 'x', ts: now() };
-        cur.turns.push(a1);
-        Object.assign(a1, { version: addVersion(elbow('8 mm'), 'model').n, replaced: null });
-        cur.turns.push({ id: uid(), role: 'user', text: 'Make the flange thicker, about 12 mm.', ts: now() });
-        const a2 = { id: uid(), role: 'assistant', kind: 'model', status: 'done', thought: 'Only flange_thick changes.', attempts: [], request: 'x', ts: now(),
-          tools: [{ name: 'list_parameters', label: 'Listed user parameters · 8' }, { name: 'get_feature', label: 'Inspected feature f4 · flange' }] };
-        cur.turns.push(a2);
-        const r2 = addVersion(elbow('12 mm'), 'model');
-        Object.assign(a2, { version: r2.n, replaced: r2.replaced });
-        cur.turns.push({ id: uid(), role: 'user', text: 'Add a 45° gusset between the flange and the pipe. Make it fail please.', ts: now() });
-        cur.turns.push({ id: uid(), role: 'assistant', kind: 'model', status: 'error', thought: '', request: 'x',
-          attempts: [{ error: 'timeline[7] (extrude): no closed profiles' }, { error: 'timeline[7] (extrude): no closed profiles' }],
-          error: "Gemini: 429 Resource has been exhausted (e.g. check quota).", ts: now() });
-      }
-
-      const handlers = {
-        ready() {
-          if (/[?&]demo\b/.test(location.search)) seedDemo();
-          if (!cur) newChat();
-          emit({ type: 'state', chats: summaries(), chat: view(), providers, active_provider: active, general, busy, components: !/[?&]part\b/.test(location.search) });
-        },
-        send({ text }) { if (!busy) sendText(text); },
-        retry({ turn_id }) {
-          const t = cur.turns.find((x) => x.id === turn_id);
-          if (!t || busy) return;
-          Object.assign(t, { status: 'thinking', thought: '', attempts: [], error: null });
-          runModel(t, t.request.replace(/fail/gi, ''));
-        },
-        stop() {
-          busy = false; timers.forEach(clearTimeout); timers = [];
-          const t = cur.turns[cur.turns.length - 1];
-          if (t && ['thinking', 'writing', 'building'].includes(t.status)) t.status = 'stopped';
-          pushChat();
-        },
-        new_chat() {
-          if (!cur || cur.turns.length) newChat();
-          pushChat();
-        },
-        switch_chat({ id }) { cur = chats.find((c) => c.id === id) || cur; pushChat(); },
-        delete_chat({ id }) {
-          if (busy) return;
-          const gone = chats.find((c) => c.id === id);
-          if (!gone) return;
-          chats = chats.filter((c) => c !== gone);
-          if (cur === gone) {
-            const rest = chats.filter((c) => c.turns.length);
-            if (rest.length) cur = rest[rest.length - 1]; else newChat();
-          }
-          pushChat();
-          emit({ type: 'toast', text: 'Chat deleted' });
-        },
-        confirm_replace({ turn_id, choice }) {
-          const t = cur.turns.find((x) => x.id === turn_id);
-          if (choice === 'cancel') { t.status = 'stopped'; pushChat(); return; }
-          t.status = 'building'; busy = true; pushChat();
-          later(600, () => finish(t, elbow('14 mm'), 'model'));
-        },
-        apply_json({ text }) {
-          cur.turns.push({ id: uid(), role: 'user', text, is_json: true, ts: now() });
-          const t = { id: uid(), role: 'assistant', kind: 'json', status: 'building', thought: '', attempts: [], ts: now() };
-          cur.turns.push(t); busy = true; pushChat();
-          later(600, () => finish(t, JSON.parse(text), 'json'));
-        },
-        restore_version({ n }) {
-          const v = cur.versions.find((x) => x.n === n);
-          const t = { id: uid(), role: 'assistant', kind: 'restore', status: 'building', thought: '', attempts: [], restored_from: n, ts: now() };
-          cur.turns.push(t); busy = true; pushChat();
-          later(600, () => finish(t, JSON.parse(JSON.stringify(v.dsl)), 'restore'));
-        },
-        set_param({ name, expr }) {
-          later(250, () => {
-            if (!/\d/.test(expr)) { emit({ type: 'param', name, ok: false, error: `"${expr}" is not a valid expression` }); return; }
-            const v = cur.versions.find((x) => x.n === cur.current);
-            v.dsl.parameters[name] = expr;
-            emit({ type: 'param', name, ok: true, chat: view() });
-          });
-        },
-        validate_json({ text }) {
-          try {
-            const d = JSON.parse(text);
-            if (!Array.isArray(d.timeline) || !d.timeline.length) throw new Error('timeline must be a non-empty list');
-            emit({ type: 'json_check', ok: true, steps: d.timeline.length });
-          } catch (e) { emit({ type: 'json_check', ok: false, error: e.message }); }
-        },
-        get_models({ provider, values }) {
-          later(600, () => {
-            const p = providers.find((x) => x.id === provider);
-            const v = values || p.values;
-            if (provider === 'gemini' && !/^AIza/.test(v.api_key || '')) { emit({ type: 'models', provider, models: [], error: 'Gemini: API key not valid. Please pass a valid API key.' }); return; }
-            if (provider === 'openai_compat' && !/^https?:\/\//.test(v.url || '')) { emit({ type: 'models', provider, models: [], error: 'Could not connect: URL must start with http:// or https://' }); return; }
-            p.models = MODELS[provider].slice();
-            emit({ type: 'models', provider, models: p.models, selected: p.model });
-          });
-        },
-        select_model({ provider, model }) {
-          active = provider;
-          providers.find((x) => x.id === provider).model = model;
-        },
-        set_model_option({ provider, model, think }) {
-          const p = providers.find((x) => x.id === provider);
-          p.model_options[model] = { think: !!think };
-        },
-        save_provider({ provider, values }) {
-          const p = providers.find((x) => x.id === provider);
-          for (const f of p.schema) if (f.key in values) p.values[f.key] = values[f.key];
-          p.configured = isReady(p);
-          emit({ type: 'provider_status', provider, configured: p.configured });
-        },
-        set_target({ mode }) {
-          if (['component', 'new_body'].includes(mode)) cur.target.mode = mode;
-          pushChat();
-        },
-        save_general({ values }) {
-          if (['component', 'new_body'].includes(values.default_mode)) general.default_mode = values.default_mode;
-          if (['system', 'light', 'dark'].includes(values.theme)) general.theme = values.theme;
-          if (values.auto_fix !== undefined) general.auto_fix = Math.max(0, Math.min(5, Number(values.auto_fix) || 0));
-        },
-        copy({ text }) {
-          (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(() => {});
-          emit({ type: 'toast', text: 'Copied to clipboard' });
-        },
-        open_bom({ n }) {
-          const v = cur.versions.find((x) => x.n === n) || cur.versions.find((x) => x.n === cur.current);
-          const rows = v ? [
-            { category: 'Made', item: cur.title || 'Main part', qty: '1', unit: 'pcs', note: '6061 Aluminum', link: '', made: true },
-            { category: 'Fasteners', item: 'M4 x 12 socket head cap screw', qty: '4', unit: 'pcs', note: 'Stainless', link: 'https://example.com/m4', made: false },
-          ] : [];
-          const csv = 'Category,Item,Qty,Unit,Note,Link\n' + rows.map((r) => [r.category, r.item, r.qty, r.unit, r.note, r.link].join(',')).join('\n') + '\n';
-          try {
-            localStorage.setItem('vibeshaper_mock_bom', JSON.stringify({
-              type: 'bom', theme: general.theme, empty: !v, title: cur.title, version: v ? v.n : null,
-              is_current: Boolean(v && v.n === cur.current), rows, csv, buy_count: 1, make_count: 1,
-            }));
-          } catch (_) {}
-          window.open('bom.html?mock', 'VibeShaper_BOM', 'width=820,height=560,resizable=yes');
-        },
-      };
-
-      return (action, data) => {
-        const fn = handlers[action];
-        if (fn) setTimeout(() => fn(JSON.parse(data || '{}')), 30);
-        return 'OK';
-      };
-    },
-  };
 
   // ---------------------------------------------------------------- boot
   wire();

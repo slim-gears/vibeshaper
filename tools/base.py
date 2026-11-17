@@ -32,6 +32,7 @@ class BaseToolkit:
     name = ''        # for people (logs, docs)
     order = 100      # tools from lower orders are listed first
     needs: Sequence[str] = ()  # model capabilities required besides tool calling, e.g. ('images',)
+    main_thread = True  # False for pure I/O tools (e.g. network) that must not block Fusion's UI thread
     prompt = ''      # added to the system prompt when these tools are offered
 
     def tools(self) -> List[Dict[str, Any]]:

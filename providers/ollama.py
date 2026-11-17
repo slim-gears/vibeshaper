@@ -14,14 +14,21 @@ def _to_ollama(messages):
     """VibeShaper's provider-neutral messages -> Ollama /api/chat messages."""
     out = []
     for m in messages:
+        imgs = [i['data'] for i in (m.get('images') or ()) if isinstance(i, dict) and i.get('data')]
         if m.get('role') == 'tool':
-            out.append({'role': 'tool', 'content': m.get('content', ''), 'tool_name': m.get('name', '')})
+            entry = {'role': 'tool', 'content': m.get('content', ''), 'tool_name': m.get('name', '')}
+            if imgs:
+                entry['images'] = imgs
+            out.append(entry)
         elif m.get('tool_calls'):
             out.append({'role': 'assistant', 'content': m.get('content', ''),
                         'tool_calls': [{'function': {'name': c['name'], 'arguments': c.get('arguments') or {}}}
                                        for c in m['tool_calls']]})
         else:
-            out.append({'role': m['role'], 'content': m.get('content', '')})
+            entry = {'role': m['role'], 'content': m.get('content', '')}
+            if imgs:
+                entry['images'] = imgs
+            out.append(entry)
     return out
 
 
@@ -108,6 +115,11 @@ class OllamaProvider(BaseProvider):
             return self.generate(model, messages, values, GenerateOptions(False, opts.response_schema, opts.tools),
                                  on_chunk, stop_event, on_open, log)
 
+        def retry_without_tools():
+            log(f"VibeShaper: model '{model}' does not support tools, retrying without them")
+            return self.generate(model, messages, values, GenerateOptions(think, opts.response_schema, None),
+                                 on_chunk, stop_event, on_open, log)
+
         out, thinking, calls = [], 0, []
         try:
             resp = urllib.request.urlopen(req, timeout=300)
@@ -121,6 +133,8 @@ class OllamaProvider(BaseProvider):
                 err_msg = err_body
             if think and 'does not support thinking' in err_msg.lower():
                 return retry_without_thinking()
+            if opts.tools and 'does not support tools' in err_msg.lower():
+                return retry_without_tools()
             raise RuntimeError(f'Ollama: {err_msg}')
         except urllib.error.URLError as e:
             if stop_event and stop_event.is_set():

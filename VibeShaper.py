@@ -497,7 +497,7 @@ def _start_worker():
         try:
             d = llm.generate(prov_id, values, model, _job['messages'], think=_job.get('think', False),
                              tools=toolbox.specs(_job_toolkits()) or None,
-                             run_tool=lambda name, args: _call_tool_on_main(job_id, name, args, stop_event),
+                             run_tool=lambda name, args: _call_tool(job_id, name, args, stop_event),
                              on_chunk=on_chunk,
                              stop_event=stop_event,
                              on_open=lambda resp: _job.update(active_resp=resp),
@@ -514,12 +514,24 @@ def _start_worker():
     threading.Thread(target=work, daemon=True).start()
 
 
-def _call_tool_on_main(job_id, name, args, stop_event):
-    """Worker thread: Fusion's API only works on the main thread, so ask it to run the tool and wait."""
+def _call_tool(job_id, name, args, stop_event):
+    """Worker thread: run main_thread=False tools directly here; bounce Fusion API tools to the main thread."""
+    targs = dict(args or {})
+    kit = toolbox.owner(name, _job_toolkits())
+    pre_result = None
+    if kit is not None and not getattr(kit, 'main_thread', True):
+        if stop_event.is_set():
+            raise InterruptedError('Generation cancelled by user')
+        pre_result = toolbox.run(kit, name, targs, toolbox.ToolContext(None, None, {}))
+        if stop_event.is_set():
+            raise InterruptedError('Generation cancelled by user')
     key = next(_tool_keys)
     slot = {'event': threading.Event(), 'result': None}
     _tool_waits[key] = slot
-    _app().fireCustomEvent(TOOL_EVENT_ID, json.dumps({'key': key, 'job': job_id, 'name': name, 'args': args}))
+    req = {'key': key, 'job': job_id, 'name': name, 'args': targs}
+    if pre_result is not None:
+        req['pre_result'] = pre_result
+    _app().fireCustomEvent(TOOL_EVENT_ID, json.dumps(req))
     end = time.time() + TOOL_TIMEOUT
     while not slot['event'].wait(0.05):
         if stop_event.is_set():
@@ -527,13 +539,14 @@ def _call_tool_on_main(job_id, name, args, stop_event):
             raise InterruptedError('Generation cancelled by user')
         if time.time() > end:
             _tool_waits.pop(key, None)
-            return {'error': 'Fusion did not answer in time.'}
+            return pre_result if pre_result is not None else {'error': 'Fusion did not answer in time.'}
     return slot['result']
 
 
 def _capabilities(info):
-    """What a model can do, as names ('images', 'tools', ...) from its entry in the model list."""
-    return {k for k, v in (info or {}).items() if v is True}
+    """What a model can do, as names ('images', 'tools', ...) from its entry in the model list.
+    When the provider's model list hasn't been fetched yet this session (info is None), assume tools work."""
+    return {'tools'} if info is None else {k for k, v in info.items() if v is True}
 
 
 def _job_toolkits():
@@ -567,7 +580,7 @@ class _ToolRequest(adsk.core.CustomEventHandler):
             elif not (kit := toolbox.owner(name, _job_toolkits())):
                 result = {'error': f'There is no tool called "{name}".'}
             else:
-                result = toolbox.run(kit, name, targs, _tool_context(kit, design, store))
+                result = r['pre_result'] if 'pre_result' in r else toolbox.run(kit, name, targs, _tool_context(kit, design, store))
                 c, t = _job_target()
                 if t:
                     entry = {'name': name, 'label': toolbox.label(kit, name, targs, result)}

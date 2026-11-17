@@ -50,6 +50,21 @@ class BaseEntity:
     def validate(self, entity: Dict[str, Any], where: str, ent_ids: Set[str]) -> None:
         """Raise ValueError (mentioning `where`) when the entity is invalid."""
 
+    def point_dims(self, entity: Dict[str, Any]):
+        """Coordinate tuple lengths (2 or 3) of all points in `entity`."""
+        dims = set()
+        for v in entity.values():
+            if isinstance(v, list) and v:
+                if isinstance(v[0], (str, int, float)):
+                    dims.add(len(v))
+                elif isinstance(v[0], list):
+                    dims.update(len(p) for p in v if isinstance(p, list))
+                elif isinstance(v[0], dict):
+                    for sub in v:
+                        if isinstance(sub, dict):
+                            dims |= self.point_dims(sub)
+        return dims
+
     def draw(self, sk: Any, entity: Dict[str, Any], ctx: EntityDrawContext) -> None:
         """Draw the entity onto `sk` and constrain its points via `ctx`."""
         raise NotImplementedError

@@ -8,14 +8,15 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Set
 
 PLANES = ('xy', 'xz', 'yz')
+SKETCH_PLANES = ('xy', 'xz', 'yz', '3d')
 AXES = ('x', 'y', 'z')
 MODES = ('new_body', 'join', 'cut', 'intersect')
 
 JS_LEN = {'type': ['string', 'number']}
-JS_POINT = {'type': 'array', 'items': JS_LEN, 'minItems': 2, 'maxItems': 2}
+JS_POINT = {'type': 'array', 'items': JS_LEN, 'minItems': 2, 'maxItems': 3}
 JS_CENTER = {'type': 'array', 'items': JS_LEN, 'minItems': 2, 'maxItems': 3}
 JS_AXIS = {'enum': list(AXES)}
-JS_PLANE = {'enum': list(PLANES)}
+JS_PLANE = {'enum': list(SKETCH_PLANES)}
 JS_MODE = {'enum': list(MODES)}
 
 
@@ -84,3 +85,7 @@ class BaseFeature:
     def pattern_copies(self, step: Dict[str, Any], fid: str, ev: Callable[[Any], float]) -> int:
         """How many copies this step makes of feature `fid` for BOM counting (1 when none)."""
         return 1
+
+    def rebuild_refs(self, step: Dict[str, Any]):
+        """Values in `step` whose parameters require a rebuild when changed (e.g. 3D sketch coords)."""
+        return None

@@ -31,8 +31,24 @@ def need(obj, where, *keys):
 
 
 def xy(v, where):
-    if not (isinstance(v, list) and len(v) == 2):
+    if not (isinstance(v, list) and len(v) == 2 and all(isinstance(x, (str, int, float)) and not isinstance(x, bool) for x in v)):
         raise ValueError(f'{where}: point must be [x, y]')
+
+
+def pt2or3(v, where):
+    if not (isinstance(v, list) and len(v) in (2, 3) and all(isinstance(x, (str, int, float)) and not isinstance(x, bool) for x in v)):
+        raise ValueError(f'{where}: point must be [x, y] or [x, y, z]')
+
+
+def coord_pt(ctx, p):
+    """Convert a 2D [a, b] or 3D [x, y, z] DSL point into a sketch Point3D."""
+    return ctx.pt(*(ctx.cm(c) for c in p))
+
+
+def same_pt(ctx, a, b):
+    if len(a) != len(b):
+        return False
+    return all(abs(ctx.cm(x) - ctx.cm(y)) < EPS for x, y in zip(a, b))
 
 
 def check_edges(edges, where, features, sketches=()):
@@ -315,7 +331,11 @@ def place_points(sk, pts, coords, links, ex, cm, pt):
     On each sketch axis, points joined by such a segment share a coordinate and form a
     group; each group gets exactly one dimension: the length of a segment from a group
     that is already placed, or else its distance from the origin (alignment when 0).
+    In 3D sketches (any coord has 3 components), points live in 3D space so 2D planar
+    dimensions do not apply.
     """
+    if any(len(c) > 2 for c in coords):
+        return
     import adsk.core
     import adsk.fusion
 
@@ -392,10 +412,10 @@ def place_points(sk, pts, coords, links, ex, cm, pt):
 
 
 def draw_chain(ctx, e, default_closed):
-    """Draw a closed polygon or open/closed polyline of straight segments."""
+    """Draw a closed polygon or open/closed polyline of straight segments (2D or 3D)."""
     curves = ctx.sk.sketchCurves
     raw = e['points']
-    pts = [ctx.pt(ctx.cm(x), ctx.cm(y)) for x, y in raw]
+    pts = [coord_pt(ctx, p) for p in raw]
     is_closed = e.get('closed', default_closed)
     lines = [curves.sketchLines.addByTwoPoints(pts[0], pts[1])]
     for p in pts[2:]:

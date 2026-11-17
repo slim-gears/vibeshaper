@@ -106,13 +106,13 @@ A sketch step contains a non-empty `entities` array. Every entity may include an
 
 ### 4.5. Polyline (`polyline`)
 ```text
-{"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires
+{"type": "polyline", "points": [[a, b], ...], "closed": false}  open spine/path for sweeps or wires (or [[x, y, z], ...] in a "plane": "3d" sketch)
 ```
 * **Keys**: `type` *(required)*, `points` *(required)*, `closed` *(optional)*, `id` *(optional)*
 
 ### 4.6. Spline (`spline`)
 ```text
-{"type": "spline", "points": [[a, b], ...], "closed": false}   smooth fitted spline curve through points (periodic loop when "closed": true)
+{"type": "spline", "points": [[a, b], ...], "closed": false}   smooth fitted spline curve through points (or [[x, y, z], ...] in a "plane": "3d" sketch; periodic loop when "closed": true)
 ```
 * **Keys**: `type` *(required)*, `points` *(required)*, `closed` *(optional)*, `id` *(optional)*
 
@@ -132,12 +132,13 @@ A sketch step contains a non-empty `entities` array. Every entity may include an
 
 ## 5. Timeline Operations
 
-The `timeline` is an ordered array of step objects. Each step specifies `"op"` from the 13 core operations below or the shape plugins in Section 5.14.
+The `timeline` is an ordered array of step objects. Each step specifies `"op"` from the 14 core operations below or the shape plugins in Section 5.15.
 
 ### 5.1. `sketch` (Sketch)
 ```text
 Sketch:
-   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz", "offset": length (optional), "entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal"|"coincident", "entities": [id1, id2]}, {"type": "midpoint", "point": pt_id, "entity": line_id}, {"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}
+   {"op": "sketch", "id": unique_name, "plane": "xy"|"xz"|"yz"|"3d", "offset": length (optional, 2D planes only), "entities": [entity, ...], "constraints": [{"type": "perpendicular"|"parallel"|"concentric"|"tangent"|"equal"|"coincident", "entities": [id1, id2]}, {"type": "midpoint", "point": pt_id, "entity": line_id}, {"type": "symmetry", "entities": [id1, id2], "symmetry_line": line_id}, ...] (optional)}
+   (With `"plane": "3d"`, open/closed 3D curves use world coordinates `[x, y, z]` for 3D sweep paths or loft guide rails.)
 ```
 * **Step keys**: `op`, `id` *(optional unless required above)*, `plane`, `offset`, `entities`, `constraints`
 
@@ -163,6 +164,8 @@ Fillet (ONLY uses radius and edges! NEVER put thickness or remove_faces here!):
 ```
 * **Step keys**: `op`, `id` *(optional unless required above)*, `radius`, `edges`, `target`
 - For rounded corners or chamfered rims, use `fillet` or `chamfer` with edge selectors (`"vertical"`, `"top"`, `"circular"`).
+- Apply `"vertical"` corner fillets AFTER joining perimeter walls/lips (or use `shell` on a filleted block); never fillet a base plate's vertical corners and then join an unfilleted rectangle on top of it.
+- When filleting `"top"` or `"bottom"` edges of a thin wall of thickness `t`, keep `radius < t / 2` (e.g. `0.5 mm` on a `2 mm` wall) so the inner and outer edge fillets do not collide.
 
 ### 5.5. `chamfer` (Chamfer)
 ```text
@@ -233,7 +236,16 @@ Sweep:
 - For hollow pipes or conduit: to ensure fluid can pass through, FIRST sweep the outer pipe body (`mode: "new_body"`), THEN sweep an inner bore circle with a smaller diameter along the path (`mode: "cut"`) so the pipe is hollow and has a through-bore from end to end.
 - When modeling a gusset rib against a round pipe or cylinder: rib sketch points MUST extend into the body centerline (e.g. at [0, 0] or into the wall), NOT stop on the outer radius. Because round cylinders curve away from the offset sketch plane, stopping at the outer radius causes floating gaps!
 
-### 5.13. `coil` (Coil)
+### 5.13. `loft` (Loft)
+```text
+Loft:
+   {"op": "loft", "sketches": [sketch_id_1, sketch_id_2, ...], "rails": [rail_sketch_id, ...] (optional), "centerline": centerline_sketch_id (optional), "closed": false (optional), "mode": "new_body"|"join"|"cut"|"intersect"}
+```
+* **Step keys**: `op`, `id` *(optional unless required above)*, `sketches`, `rails`, `centerline`, `closed`, `mode`
+- For smooth transitions between different cross-sections (e.g. a round-to-rectangular nozzle, tapered wing, horn, or ergonomic handle), draw each cross-section in its own offset `sketch` and blend them with `loft`.
+- Every guide rail in `loft` `"rails"` MUST touch the perimeter of EVERY cross-section in `"sketches"` at the exact same coordinates (`ASM_GUIDE_NOT_INTERSECT` occurs if a rail misses any intermediate profile); if you want a rail to curve between start and end profiles without matching an intermediate profile, omit the intermediate profile or use `"centerline"` instead.
+
+### 5.14. `coil` (Coil)
 ```text
 Coil (Spring / Helix):
    {"op": "coil", "diameter": coil_dia, "pitch": pitch, "revolutions": count, "height": length (optional; any 2 of pitch, revolutions, height), "section_size": wire_dia, "section": "circle"|"square" (optional, default "circle"), "center": [x, y, z] (optional, default [0, 0, 0]), "clockwise": true|false (optional, default true), "axis": "z"|"x"|"y" (optional, default "z"), "mode": "new_body"|"join"|"cut" (optional, default "new_body")}
@@ -241,7 +253,7 @@ Coil (Spring / Helix):
 * **Step keys**: `op`, `id` *(optional unless required above)*, `diameter`, `pitch`, `revolutions`, `section_size`, `section`, `axis`, `center`, `mode`, `clockwise`
 - For springs, coils, or screw helices, use `coil` with `diameter` (major coil diameter), `section_size` (wire diameter), and `pitch` / `revolutions` (or `height`).
 
-### 5.14. Shapes (plugin steps)
+### 5.15. Shapes (plugin steps)
 Ready-made parametric parts and features in `shapes/`. Each expands into ordinary parameters and timeline steps before validation and build, prefixed by its required `"id"` (`<id>_...`). Every preset dimension can be overridden.
 
 #### `spur_gear` — Spur gear

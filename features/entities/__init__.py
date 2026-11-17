@@ -72,7 +72,7 @@ def prompt() -> str:
     return '\n'.join(e.prompt.strip('\n') for e in get_all_entities() if e.prompt and e.prompt.strip())
 
 
-def validate_entity(e: Dict, where: str, ent_ids: Set[str]) -> None:
+def validate_entity(e: Dict, where: str, ent_ids: Set[str], dim: Optional[int] = None) -> None:
     h.need(e, where, 'type')
     ent = get_entity(e['type'])
     if not ent:
@@ -80,6 +80,12 @@ def validate_entity(e: Dict, where: str, ent_ids: Set[str]) -> None:
         raise ValueError(f'{where}: type must be one of {known}')
     h.need(e, where, *ent.required)
     ent.validate(e, where, ent_ids)
+    if dim is not None:
+        pdims = ent.point_dims(e)
+        if dim == 3 and any(d != 3 for d in pdims):
+            raise ValueError(f'{where}: entities in a "3d" sketch must use 3D points [x, y, z]')
+        if dim == 2 and any(d != 2 for d in pdims):
+            raise ValueError(f'{where}: 3D points [x, y, z] require "plane": "3d"')
     if 'id' in e:
         if not isinstance(e['id'], str) or not e['id']:
             raise ValueError(f'{where}: id must be a non-empty string')

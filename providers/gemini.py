@@ -26,6 +26,8 @@ def _to_gemini(messages):
     system, contents = None, []
     for m in messages:
         role = m.get('role')
+        imgs = [{'inlineData': {'mimeType': i.get('mime_type') or 'image/png', 'data': i['data']}}
+                for i in (m.get('images') or ()) if isinstance(i, dict) and i.get('data')]
         if role == 'system':
             system = {'parts': [{'text': m.get('content', '')}]}
         elif role == 'tool':
@@ -33,13 +35,13 @@ def _to_gemini(messages):
                 result = json.loads(m.get('content') or 'null')
             except ValueError:
                 result = m.get('content')
-            part = {'functionResponse': {'name': m.get('name', ''), 'response': {'result': result}}}
+            parts = [{'functionResponse': {'name': m.get('name', ''), 'response': {'result': result}}}, *imgs]
             # all results of one round go back together, in one user turn
             if contents and contents[-1]['role'] == 'user' and contents[-1]['parts'] and \
-                    'functionResponse' in contents[-1]['parts'][-1]:
-                contents[-1]['parts'].append(part)
+                    any('functionResponse' in p for p in contents[-1]['parts']):
+                contents[-1]['parts'].extend(parts)
             else:
-                contents.append({'role': 'user', 'parts': [part]})
+                contents.append({'role': 'user', 'parts': parts})
         elif role == 'assistant':
             parts = [{'text': m['content']}] if m.get('content') else []
             for c in m.get('tool_calls') or []:
@@ -47,7 +49,8 @@ def _to_gemini(messages):
                               **(c.get('extra') or {})})
             contents.append({'role': 'model', 'parts': parts or [{'text': ''}]})
         else:
-            contents.append({'role': 'user', 'parts': [{'text': m.get('content', '')}]})
+            parts = ([{'text': m.get('content', '')}] if m.get('content') or not imgs else []) + imgs
+            contents.append({'role': 'user', 'parts': parts})
     return system, contents
 
 

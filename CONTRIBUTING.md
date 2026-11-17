@@ -60,16 +60,6 @@ They use a simulated Fusion and a temporary folder for settings and logs. If you
 
 GitHub runs the same tests on Linux and Windows for every push and pull request.
 
-## Working on the chat panel
-
-The panel (`palette/`) is plain HTML, CSS and JavaScript. You can work on it in a normal browser with a built-in fake backend:
-
-```bash
-python -m http.server 8765 --directory palette
-```
-
-Then open `http://localhost:8765/index.html?mock&demo` (`mock` uses the fake backend, `demo` fills in a sample chat).
-
 ## How the code is organized
 
 | Path | What it does |
