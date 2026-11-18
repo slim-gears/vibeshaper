@@ -4,6 +4,14 @@ All notable changes to VibeShaper (called PromptCAD up to 0.2.0). The format fol
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### Added
+- **OpenAI and OpenAI-compatible provider (`providers/openai.py`).** Added built-in support for OpenAI and any OpenAI-compatible endpoint (OpenRouter, DeepSeek, Groq, LM Studio, vLLM, Ollama `/v1`), including streaming reasoning, tool calling, vision tool results, and optional custom `base_url` and `name`.
+- **Multiple provider instances (`multiple = True`).** Providers that opt into `multiple = True` (such as OpenAI) now offer an **Add provider** button on their Settings page so multiple endpoints can be configured side-by-side with their own display name, base URL, and API key.
+- **Anthropic Claude provider (`providers/anthropic.py`).** Added built-in support for Anthropic Claude (`/v1/messages`) with extended thinking (`thinking_delta` + `signature_delta` preservation across tool turns), tool calling, and multimodal tool results.
+- **Collapsible provider groups in the model menu.** The model picker dropdown now groups models into collapsible provider sections with model count badges, keeping only the currently active provider expanded by default.
+
 ## [0.9.0]
 
 ### Added

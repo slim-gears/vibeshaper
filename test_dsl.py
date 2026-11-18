@@ -407,6 +407,100 @@ with unittest.mock.patch('urllib.request.urlopen', side_effect=_gemini_chat):
 assert _gsent[-1]['generationConfig']['thinkingConfig'] == {'thinkingBudget': 0}
 os.environ.update(_env_keys)
 
+# --- OpenAI plugin (with optional base_url and multiple instances)
+openai_prov = providers.get_provider('openai')
+assert openai_prov.multiple is True
+assert providers.get_provider('openai:2') is openai_prov
+assert openai_prov.instance_names({'name': '', 'base_url': 'https://api.openai.com/v1'}, 0) == ('OpenAI', 'OpenAI')
+assert openai_prov.instance_names({'name': '', 'base_url': 'https://api.openai.com/v1'}, 1) == ('OpenAI 2', 'OpenAI 2')
+assert openai_prov.instance_names({'name': '', 'base_url': 'https://openrouter.ai/api/v1'}, 1) == ('openrouter.ai', 'openrouter.ai')
+assert openai_prov.instance_names({'name': 'OpenRouter', 'base_url': 'https://openrouter.ai/api/v1'}, 1) == ('OpenRouter', 'OpenRouter')
+_oai_env = {k: os.environ.pop(k) for k in ('OPENAI_API_KEY',) if k in os.environ}
+assert not openai_prov.is_configured({'api_key': '', 'base_url': 'https://api.openai.com/v1'})
+assert openai_prov.is_configured({'api_key': '', 'base_url': 'http://localhost:1234/v1'})  # local server needs no key
+assert openai_prov.is_configured({'api_key': 'sk-test'})
+
+_oai_models = {'data': [{'id': 'gpt-4o'}, {'id': 'o3-mini'}, {'id': 'text-embedding-3-small'}, {'id': 'dall-e-3'}]}
+with unittest.mock.patch('urllib.request.urlopen', return_value=_Resp(body=_oai_models)):
+    om = [m.to_view() for m in openai_prov.list_models({'api_key': 'sk-1', 'base_url': 'https://custom.example/v1'})]
+assert om == [
+    {'id': 'gpt-4o', 'label': 'gpt-4o', 'images': True, 'thinking': False, 'tools': True},
+    {'id': 'o3-mini', 'label': 'o3-mini', 'images': False, 'thinking': True, 'tools': True},
+], om
+
+_osent = []
+_oai_sse = [
+    b'data: ' + json.dumps({'choices': [{'delta': {'reasoning_content': 'step 1'}}]}).encode('utf-8'),
+    b'data: ' + json.dumps({'choices': [{'delta': {'content': '{"parameters": {}, "timeline": []}'}}]}).encode('utf-8'),
+    b'data: [DONE]',
+]
+thoughts = []
+with unittest.mock.patch('urllib.request.urlopen', side_effect=lambda req, timeout=None: (_osent.append((req.full_url, json.loads(req.data))), _Resp(lines=_oai_sse))[1]):
+    res = openai_prov.generate('o3-mini', [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'hi'}],
+                               {'api_key': 'sk-1', 'base_url': 'https://custom.example/v1'},
+                               GenerateOptions(think=True),
+                               on_chunk=lambda k, c: thoughts.append(c) if k == 'thought' else None, log=lambda *_: None)
+assert res == '{"parameters": {}, "timeline": []}' and thoughts == ['step 1']
+assert _osent[-1][0] == 'https://custom.example/v1/chat/completions'
+assert _osent[-1][1]['reasoning_effort'] == 'medium' and _osent[-1][1]['response_format'] == {'type': 'json_object'}
+
+# Streamed tool call delta chunks + multimodal tool image forwarding in OpenAI format
+_oai_tc_sse = [
+    b'data: ' + json.dumps({'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call_9', 'function': {'name': 'get_', 'arguments': '{"id":'}}]}}]}).encode('utf-8'),
+    b'data: ' + json.dumps({'choices': [{'delta': {'tool_calls': [{'index': 0, 'function': {'name': 'body', 'arguments': '"b1"}'}}]}}]}).encode('utf-8'),
+    b'data: [DONE]',
+]
+with unittest.mock.patch('urllib.request.urlopen', side_effect=lambda req, timeout=None: (_osent.append(json.loads(req.data)), _Resp(lines=_oai_tc_sse))[1]):
+    r_oai = openai_prov.generate('gpt-4o', [
+        {'role': 'user', 'content': 'check'},
+        {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'call_1', 'name': 'capture_viewport', 'arguments': {}}]},
+        {'role': 'tool', 'tool_call_id': 'call_1', 'name': 'capture_viewport', 'content': '{"count": 1}',
+         'images': [{'mime_type': 'image/png', 'data': 'QUJD'}]},
+    ], {'api_key': 'sk-1'}, GenerateOptions(tools=[providers.ToolDef('get_body', 'desc', {'type': 'object', 'properties': {'id': {'type': 'string'}}})]), log=lambda *_: None)
+assert isinstance(r_oai, providers.Reply) and r_oai.tool_calls[0].name == 'get_body' and r_oai.tool_calls[0].arguments == {'id': 'b1'}
+assert _osent[-1]['messages'][-1]['role'] == 'user' and _osent[-1]['messages'][-1]['content'][1]['image_url']['url'].startswith('data:image/png;base64,QUJD')
+os.environ.update(_oai_env)
+
+# --- Anthropic plugin
+anthropic_prov = providers.get_provider('anthropic')
+_ant_env = {k: os.environ.pop(k) for k in ('ANTHROPIC_API_KEY',) if k in os.environ}
+assert not anthropic_prov.is_configured({'api_key': ''})
+assert anthropic_prov.is_configured({'api_key': 'sk-ant-1'})
+
+_ant_models = {'data': [{'id': 'claude-sonnet-4-5', 'display_name': 'Claude Sonnet 4.5'}, {'id': 'claude-3-5-haiku-latest', 'display_name': 'Claude 3.5 Haiku'}]}
+with unittest.mock.patch('urllib.request.urlopen', return_value=_Resp(body=_ant_models)):
+    am = [m.to_view() for m in anthropic_prov.list_models({'api_key': 'sk-ant-1'})]
+assert am == [
+    {'id': 'claude-3-5-haiku-latest', 'label': 'Claude 3.5 Haiku', 'images': True, 'thinking': False, 'tools': True},
+    {'id': 'claude-sonnet-4-5', 'label': 'Claude Sonnet 4.5', 'images': True, 'thinking': True, 'tools': True},
+], am
+
+_asent = []
+_ant_sse = [
+    b'data: ' + json.dumps({'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'thinking'}}).encode('utf-8'),
+    b'data: ' + json.dumps({'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'thinking_delta', 'thinking': 'deep thought'}}).encode('utf-8'),
+    b'data: ' + json.dumps({'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'signature_delta', 'signature': 'sig123'}}).encode('utf-8'),
+    b'data: ' + json.dumps({'type': 'content_block_start', 'index': 1, 'content_block': {'type': 'tool_use', 'id': 'toolu_1', 'name': 'get_body'}}).encode('utf-8'),
+    b'data: ' + json.dumps({'type': 'content_block_delta', 'index': 1, 'delta': {'type': 'input_json_delta', 'partial_json': '{"id": "b1"}'}}).encode('utf-8'),
+]
+thoughts = []
+with unittest.mock.patch('urllib.request.urlopen', side_effect=lambda req, timeout=None: (_asent.append(json.loads(req.data)), _Resp(lines=_ant_sse))[1]):
+    r_ant = anthropic_prov.generate('claude-sonnet-4-5', [
+        {'role': 'system', 'content': 'sys'},
+        {'role': 'user', 'content': 'hi'},
+        {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'toolu_0', 'name': 'capture_viewport', 'arguments': {}, 'extra': {'thinking': 'prev', 'signature': 'sig0'}}]},
+        {'role': 'tool', 'tool_call_id': 'toolu_0', 'name': 'capture_viewport', 'content': '{"count": 1}',
+         'images': [{'mime_type': 'image/png', 'data': 'QUJD'}]},
+    ], {'api_key': 'sk-ant-1'}, GenerateOptions(think=True, tools=[providers.ToolDef('get_body', 'desc', {'type': 'object', 'properties': {'id': {'type': 'string'}}})]),
+    on_chunk=lambda k, c: thoughts.append(c) if k == 'thought' else None, log=lambda *_: None)
+assert isinstance(r_ant, providers.Reply) and thoughts == ['deep thought']
+assert r_ant.tool_calls[0].name == 'get_body' and r_ant.tool_calls[0].arguments == {'id': 'b1'}
+assert r_ant.tool_calls[0].extra == {'thinking': 'deep thought', 'signature': 'sig123'}
+assert _asent[-1]['thinking'] == {'type': 'enabled', 'budget_tokens': 4096}
+assert _asent[-1]['messages'][1]['content'][0] == {'type': 'thinking', 'thinking': 'prev', 'signature': 'sig0'}
+assert _asent[-1]['messages'][2]['content'][0]['content'][1]['source']['data'] == 'QUJD'
+os.environ.update(_ant_env)
+
 # ----- Tool plugins: discovered like providers; the core knows none of them -----
 import tools as toolbox
 from tools import design as dt
@@ -2477,6 +2571,20 @@ assert view['cfg_a']['schema'][0] == {'key': 'url', 'label': 'URL', 'type': 'str
 assert view['cfg_a']['schema'][1]['minimum'] == 0 and view['cfg_a']['schema'][1]['maximum'] == 5
 assert view['cfg_b']['values'] == {'token': ''} and view['cfg_b']['model_options'] == {'b-x': {'think': True}}
 assert view['cfg_b']['models'][0]['thinking'] is True
+
+# Multi-instance provider support in settings (add_provider / remove_provider)
+_CfgB.multiple = True
+addin._act_add_provider({'provider': 'cfg_b'})
+addin._act_save_provider({'provider': 'cfg_b:2', 'values': {'token': 'tok-2'}})
+addin._act_select_model({'provider': 'cfg_b:2', 'model': 'm-2'})
+view_multi = {p['id']: p for p in addin._providers_view()[0]}
+assert 'cfg_b:2' in view_multi and view_multi['cfg_b:2']['parent_id'] == 'cfg_b'
+assert view_multi['cfg_b:2']['configured'] is True and view_multi['cfg_b:2']['name'] == 'Cfg B Cloud 2'
+assert addin._load_settings()['selection']['provider'] == 'cfg_b:2'
+addin._act_remove_provider({'provider': 'cfg_b:2'})
+assert 'cfg_b:2' not in {p['id'] for p in addin._providers_view()[0]}
+assert addin._load_settings()['selection']['provider'] == 'cfg_b'
+
 for pid in ('cfg_a', 'cfg_b'):
     addin.providers.unregister_provider(pid)
 addin._models_cache.clear()
@@ -4269,7 +4377,11 @@ setTimeout(() => {
         window.fusionJavaScriptHandler.handle('event', JSON.stringify({
           type: 'state', active_provider: 'p1', busy: true, components: true,
           general: { theme: 'dark', auto_fix: 2, default_mode: 'component' },
-          providers: [{ id: 'p1', name: 'Local', short_name: 'Loc', schema: [], values: {}, model: 'm1', model_options: {}, models: [], configured: true }],
+          providers: [
+            { id: 'p1', name: 'Local', short_name: 'Loc', schema: [], values: {}, model: 'm1', model_options: {}, models: [{ id: 'm1', label: 'Model One' }], configured: true },
+            { id: 'p2', name: 'Cloud', default_name: 'Cloud', short_name: 'Cld', multiple: true, schema: [], values: {}, model: 'm2', model_options: {}, models: [{ id: 'm2', label: 'Model Two' }], configured: true },
+            { id: 'p2:2', parent_id: 'p2', name: 'Custom Cloud', default_name: 'Cloud 2', short_name: 'Custom', multiple: false, schema: [], values: {}, model: 'm3', model_options: {}, models: [{ id: 'm3', label: 'Model Three' }], configured: true },
+          ],
           chats: [{ id: 'c1', title: 'Pi Tray', versions: 0 }],
           chat: {
             id: 'c1', title: 'Pi Tray', current: null, versions: [], target: { mode: 'component', occ: null },
@@ -4302,14 +4414,28 @@ setTimeout(() => {
   const toolsBox = turn && turn.querySelector('.tools');
   const progBox = turn && turn.querySelector('.build-progress');
   getEl('send').trigger('click');
-  const ok = sent.length === 2
+  getEl('modelChip').trigger('click');
+  const menuBefore = getEl('modelMenu').textContent;
+  const g2 = getEl('modelMenu').querySelectorAll('.picker-toggle')[1];
+  if (g2) g2.trigger('click');
+  const menuAfter = getEl('modelMenu').textContent;
+  getEl('openSettings').trigger('click');
+  const p2Nav = getEl('settingsBody').querySelectorAll('.nav-item')[2];
+  if (p2Nav) p2Nav.trigger('click');
+  const addBtn = getEl('settingsBody').querySelector('.add-provider-btn');
+  if (addBtn) addBtn.trigger('click');
+  const ok = sent.length >= 3
     && sent[0][0] === 'ready'
     && sent[1][0] === 'stop'
+    && sent.some((s) => s[0] === 'add_provider' && s[1].provider === 'p2')
     && document.documentElement.dataset.theme === 'dark'
     && toolsBox && toolsBox.textContent.includes('Read wikipedia.org · Raspberry Pi · 2 steps')
     && toolsBox.textContent.includes('Searched the web for “Pi 5” · 3')
-    && progBox && progBox.textContent.includes('extrude base') && progBox.textContent.includes('2 / 4');
-  if (!ok) console.error('FAIL', { sent, tools: toolsBox && toolsBox.textContent, prog: progBox && progBox.textContent });
+    && progBox && progBox.textContent.includes('extrude base') && progBox.textContent.includes('2 / 4')
+    && menuBefore.includes('Model One') && !menuBefore.includes('Model Two') && !menuBefore.includes('Model Three')
+    && menuAfter.includes('Model One') && menuAfter.includes('Model Two') && !menuAfter.includes('Model Three')
+    && getEl('settingsBody').textContent.includes('Custom Cloud');
+  if (!ok) console.error('FAIL', { sent, tools: toolsBox && toolsBox.textContent, prog: progBox && progBox.textContent, menuBefore, menuAfter });
   process.exit(ok ? 0 : 1);
 }, 350);
 '''

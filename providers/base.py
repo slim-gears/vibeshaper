@@ -122,10 +122,17 @@ class BaseProvider:
     name: str = ''
     short_name: str = ''  # shown on the model chip; defaults to `name`
     order: int = 100      # position in lists (lower first), then by name
+    multiple: bool = False  # whether users can add extra instances on this provider's Settings page
 
     def __init__(self):
         if not self.short_name:
             self.short_name = self.name
+
+    def instance_names(self, values: Dict[str, Any], index: int = 0) -> Tuple[str, str]:
+        """(name, short_name) for connection instance `index` (0 is primary, 1+ are added)."""
+        if index <= 0:
+            return self.name, self.short_name
+        return f'{self.name} {index + 1}', f'{self.short_name} {index + 1}'
 
     def get_settings_schema(self) -> List[SettingDef]:
         """The fields this provider needs."""

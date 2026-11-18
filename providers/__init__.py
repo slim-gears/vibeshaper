@@ -24,7 +24,14 @@ def unregister_provider(provider_id: str) -> None:
 
 def get_provider(provider_id: str) -> Optional[BaseProvider]:
     _auto_discover()
-    return _REGISTRY.get(str(provider_id).lower())
+    key = str(provider_id).lower()
+    if key in _REGISTRY:
+        return _REGISTRY[key]
+    if ':' in key:
+        base = _REGISTRY.get(key.split(':', 1)[0])
+        if base and getattr(base, 'multiple', False):
+            return base
+    return None
 
 
 def get_all_providers() -> List[BaseProvider]:

@@ -74,6 +74,7 @@
     sheet: null,        // {version, editable}
     models: {},         // provider id -> {loading, error, checked, testing}
     pickerQuery: '',
+    pickerOpen: {},     // provider id -> bool (collapsible groups in model menu)
     general: { theme: 'system', auto_fix: 2, default_mode: 'component' },
     components: true,   // false in Part Design documents (one component only)
     settings: { open: false, page: null },  // page: 'general' | provider id | null (narrow: list)
@@ -150,12 +151,22 @@
         renderSettingsView();
         break;
       }
+      case 'providers':
+        S.providers = ev.providers || S.providers;
+        S.activeProvider = ev.active_provider || S.activeProvider;
+        renderHeader();
+        if (openPop && openPop.pop === $('modelMenu')) renderModelMenu();
+        renderSettingsView();
+        break;
       case 'provider_status': {
         const p = provider(ev.provider);
-        if (!p || p.configured === !!ev.configured) break;
+        if (!p) break;
         p.configured = !!ev.configured;
+        if (ev.name) p.name = ev.name;
+        if (ev.short_name) p.short_name = ev.short_name;
         renderHeader();
         patchProviderStatus(p);
+        if (openPop && openPop.pop === $('modelMenu')) renderModelMenu();
         break;
       }
       case 'param':
@@ -641,7 +652,7 @@
     const menu = $('modelMenu');
     const focusedId = document.activeElement && menu.contains(document.activeElement) ? document.activeElement.id : null;
     const ready = S.providers.filter((p) => p.configured);
-    const notReady = S.providers.filter((p) => !p.configured);
+    const notReady = S.providers.filter((p) => !p.parent_id && !groupOf(p).some((x) => x.configured));
     const q = S.pickerQuery.trim().toLowerCase();
     const totalModels = ready.reduce((n, p) => n + (p.models || []).length, 0);
     const matches = (p, m) => [m.id, m.label, p.name].some((x) => String(x || '').toLowerCase().includes(q));
@@ -655,14 +666,27 @@
     }
 
     const list = h('div', { class: 'picker-list', role: 'group' });
+    const defaultOpenId = (activeProv() && activeProv().configured ? activeProv().id : (ready[0] && ready[0].id)) || null;
     for (const p of ready) {
       const m = modelState(p.id);
       const models = (p.models && p.models.length ? p.models : (p.model ? [{ id: p.model, label: p.model }] : []));
       const shown = q ? models.filter((m) => matches(p, m)) : models;
       if (q && !shown.length) continue;
+      const isOpen = q ? true : (p.id in S.pickerOpen ? !!S.pickerOpen[p.id] : p.id === defaultOpenId);
+      const toggleGroup = () => {
+        S.pickerOpen[p.id] = !isOpen;
+        if (S.pickerOpen[p.id] && !m.loading && !m.checked) fetchModels(p);
+        renderModelMenu();
+      };
+      const headBtn = h('button', {
+        class: 'picker-toggle', id: `pick_group_${p.id}`, type: 'button', 'aria-expanded': String(isOpen),
+        onclick: toggleGroup,
+      }, icon('chevron', 'i-sm chev'), h('span', { class: 'picker-title', text: p.name }),
+      models.length ? h('span', { class: 'picker-count', text: String(models.length) }) : null);
       const refresh = h('button', { class: 'icon-btn sm', id: `pick_refresh_${p.id}`, title: `Refresh ${p.name} models`, 'aria-label': `Refresh ${p.name} models`,
-        onclick: () => { fetchModels(p); renderModelMenu(); } }, icon('refresh', 'i-sm' + (m.loading ? ' spin' : '')));
-      list.append(h('div', { class: 'picker-head' }, h('span', { text: p.name }), refresh));
+        onclick: (e) => { e.stopPropagation(); S.pickerOpen[p.id] = true; fetchModels(p); renderModelMenu(); } }, icon('refresh', 'i-sm' + (m.loading ? ' spin' : '')));
+      list.append(h('div', { class: 'picker-head' + (isOpen ? ' open' : '') }, headBtn, refresh));
+      if (!isOpen) continue;
       for (const m of shown) {
         const on = p.id === S.activeProvider && m.id === p.model;
         const caps = [m.images && 'Reads images', m.thinking && 'Can think before answering'].filter(Boolean);
@@ -721,6 +745,9 @@
 
   function openModelMenu() {
     S.pickerQuery = '';
+    const cur = activeProv();
+    S.pickerOpen = {};
+    if (cur) S.pickerOpen[cur.id] = true;
     togglePopover($('modelMenu'), $('modelChip'), 'right', renderModelMenu);
     if (!openPop) return;
     for (const p of S.providers) {
@@ -786,13 +813,18 @@
   // Wide panels show both side by side; narrow ones drill down (list -> page -> back).
   const WIDE = 560;
   const isWide = () => window.innerWidth >= WIDE;
+  const groupOf = (p) => {
+    const rootId = p.parent_id || p.id;
+    return S.providers.filter((x) => x.id === rootId || x.parent_id === rootId);
+  };
 
   function openSettings(page) {
     closePopover();
-    S.settings = { open: true, page: page || (isWide() ? 'general' : null) };
+    const resolved = page && provider(page) && provider(page).parent_id ? provider(page).parent_id : page;
+    S.settings = { open: true, page: resolved || (isWide() ? 'general' : null) };
     $('settingsView').hidden = false;
     renderSettingsView();
-    const target = $('settingsView').querySelector(page ? '.set-content input, .set-content button' : '.nav-item');
+    const target = $('settingsView').querySelector(resolved ? '.set-content input, .set-content button' : '.nav-item');
     (target || $('settingsBack')).focus({ preventScroll: true });
   }
 
@@ -820,7 +852,12 @@
     if (!isWide() && first) first.focus({ preventScroll: true });
   }
 
-  const statusOf = (p) => (p.configured ? { cls: 'ok', text: p.id === S.activeProvider ? 'In use' : 'Ready' } : { cls: 'warn', text: 'Not set up' });
+  const statusOf = (p) => {
+    const g = groupOf(p);
+    if (g.some((x) => x.configured && x.id === S.activeProvider)) return { cls: 'ok', text: 'In use' };
+    if (g.some((x) => x.configured)) return { cls: 'ok', text: 'Ready' };
+    return { cls: 'warn', text: 'Not set up' };
+  };
 
   function renderSettingsView() {
     if (!S.settings.open) return;
@@ -848,7 +885,7 @@
     const nav = h('nav', { class: 'set-nav', 'aria-label': 'Settings sections' },
       navItem('general', 'General', 'sliders', null),
       h('div', { class: 'nav-label', text: 'Model providers' }),
-      S.providers.map((x) => navItem(x.id, x.name, null, statusOf(x))));
+      S.providers.filter((x) => !x.parent_id).map((x) => navItem(x.id, x.default_name || x.name, null, statusOf(x))));
 
     const content = page === 'general' ? renderGeneralPage() : p ? renderProviderPage(p) : null;
     const body = $('settingsBody');
@@ -858,16 +895,20 @@
   }
 
   function patchProviderStatus(p) {
-    const st = statusOf(p);
-    const nav = $(`nav_${p.id}`);
+    const rootId = p.parent_id || p.id;
+    const root = provider(rootId) || p;
+    const st = statusOf(root);
+    const nav = $(`nav_${rootId}`);
     if (nav) {
       const dot = nav.querySelector('.dot');
       if (dot) dot.className = 'dot ' + st.cls;
       const small = nav.querySelector('small');
       if (small) small.textContent = st.text;
     }
-    const pill = $(`pill_${p.id}`);
+    const pill = $(`pill_${rootId}`);
     if (pill) { pill.className = 'pill ' + st.cls; pill.textContent = st.text; }
+    const secTitle = $(`sec_title_${p.id}`);
+    if (secTitle) secTitle.textContent = groupOf(root).length > 1 || p.parent_id ? p.name : 'Connection';
   }
 
   const saveGeneral = debounce(() => send('save_general', { values: S.general }), 250);
@@ -907,45 +948,44 @@
 
   const saveProvider = debounce((p) => send('save_provider', { provider: p.id, values: p.values }), 350);
 
-  function renderProviderPage(p) {
-    const m = modelState(p.id);
-    const st = statusOf(p);
+  function renderInstanceSection(inst, multiCount) {
+    const m = modelState(inst.id);
     const changed = (f) => {
       if (f.refreshes_models) {
         Object.assign(m, { checked: false, error: '', testing: false });
-        const res = $(`test_result_${p.id}`);
+        const res = $(`test_result_${inst.id}`);
         if (res) res.remove();
       }
-      saveProvider(p);
+      saveProvider(inst);
     };
-    const fields = p.schema.map((f) => {
-      const id = `set_${p.id}_${f.key}`;
+    const fields = inst.schema.map((f) => {
+      const id = `set_${inst.id}_${f.key}`;
       const wrap = (control) => h('div', { class: 'field' }, h('label', { for: id, text: f.label }), control,
         f.tooltip ? h('span', { class: 'help', text: f.tooltip }) : null);
       if (f.type === 'boolean') {
-        const cb = h('input', { type: 'checkbox', id, checked: !!p.values[f.key] });
-        cb.addEventListener('change', () => { p.values[f.key] = cb.checked; changed(f); });
+        const cb = h('input', { type: 'checkbox', id, checked: !!inst.values[f.key] });
+        cb.addEventListener('change', () => { inst.values[f.key] = cb.checked; changed(f); });
         return h('label', { class: 'toggle', for: id },
           h('span', { class: 'toggle-text' }, h('span', { class: 'field-label', text: f.label }), f.tooltip ? h('small', { text: f.tooltip }) : null),
           cb, h('span', { class: 'track', 'aria-hidden': 'true' }));
       }
       if (f.type === 'select') {
         const sel = h('select', { id, class: 'select' }, ...(f.options || []).map((o) =>
-          h('option', { value: o.value, text: o.label, selected: String(p.values[f.key]) === String(o.value) })));
-        sel.addEventListener('change', () => { p.values[f.key] = sel.value; changed(f); });
+          h('option', { value: o.value, text: o.label, selected: String(inst.values[f.key]) === String(o.value) })));
+        sel.addEventListener('change', () => { inst.values[f.key] = sel.value; changed(f); });
         return wrap(sel);
       }
       if (f.type === 'number') {
-        const num = h('input', { id, class: 'input', type: 'number', value: p.values[f.key] ?? '', step: 'any',
+        const num = h('input', { id, class: 'input', type: 'number', value: inst.values[f.key] ?? '', step: 'any',
           ...(f.minimum != null ? { min: f.minimum } : {}), ...(f.maximum != null ? { max: f.maximum } : {}) });
-        num.addEventListener('input', () => { if (num.value !== '') { p.values[f.key] = Number(num.value); changed(f); } });
+        num.addEventListener('input', () => { if (num.value !== '') { inst.values[f.key] = Number(num.value); changed(f); } });
         return wrap(num);
       }
       const input = h('input', {
-        id, class: 'input', type: f.type === 'secret' ? 'password' : 'text', value: p.values[f.key] ?? '',
+        id, class: 'input', type: f.type === 'secret' ? 'password' : 'text', value: inst.values[f.key] ?? '',
         placeholder: f.type === 'secret' ? 'Paste your key' : '', autocomplete: 'off', spellcheck: 'false',
       });
-      input.addEventListener('input', () => { p.values[f.key] = input.value; changed(f); });
+      input.addEventListener('input', () => { inst.values[f.key] = input.value; changed(f); });
       const row = h('div', { class: 'field-row' }, input);
       if (f.type === 'secret') {
         const eye = h('button', { class: 'icon-btn', type: 'button', id: `${id}_eye`, 'aria-label': 'Show key', title: 'Show key', onclick: () => {
@@ -957,20 +997,41 @@
       return wrap(row);
     });
 
-    const test = h('button', { class: 'btn ghost', id: `test_${p.id}`, disabled: m.loading,
-      onclick: () => { m.testing = true; fetchModels(p, p.values); renderSettingsView(); } },
+    const test = h('button', { class: 'btn ghost', id: `test_${inst.id}`, disabled: m.loading,
+      onclick: () => { m.testing = true; fetchModels(inst, inst.values); renderSettingsView(); } },
     icon('refresh', 'i-sm' + (m.loading ? ' spin' : '')), m.loading ? 'Testing…' : 'Test connection');
     let result = null;
     if (m.testing && !m.loading) {
       result = m.error
-        ? h('span', { class: 'test-result err', id: `test_result_${p.id}`, role: 'status' }, icon('alert', 'i-sm'), h('span', { text: m.error }))
-        : h('span', { class: 'test-result ok', id: `test_result_${p.id}`, role: 'status' }, icon('check', 'i-sm'), h('span', { text: `Connected · ${plural((p.models || []).length, 'model')}` }));
+        ? h('span', { class: 'test-result err', id: `test_result_${inst.id}`, role: 'status' }, icon('alert', 'i-sm'), h('span', { text: m.error }))
+        : h('span', { class: 'test-result ok', id: `test_result_${inst.id}`, role: 'status' }, icon('check', 'i-sm'), h('span', { text: `Connected · ${plural((inst.models || []).length, 'model')}` }));
     }
 
+    const headTitle = multiCount > 1 || inst.parent_id ? inst.name : 'Connection';
+    const removeBtn = inst.parent_id ? h('button', {
+      class: 'icon-btn sm danger', id: `remove_${inst.id}`, type: 'button',
+      title: `Remove ${inst.name}`, 'aria-label': `Remove ${inst.name}`,
+      onclick: () => send('remove_provider', { provider: inst.id }),
+    }, icon('trash', 'i-sm')) : null;
+
+    return h('section', { class: 'set-group' },
+      h('div', { class: 'set-group-head' }, h('h3', { id: `sec_title_${inst.id}`, text: headTitle }), removeBtn),
+      ...fields,
+      h('div', { class: 'test-row' }, test, result));
+  }
+
+  function renderProviderPage(p) {
+    const st = statusOf(p);
+    const instances = groupOf(p);
+    const addBtn = p.multiple ? h('button', {
+      class: 'btn ghost add-provider-btn', id: `add_provider_${p.id}`, type: 'button',
+      onclick: () => send('add_provider', { provider: p.id }),
+    }, icon('plus', 'i-sm'), 'Add provider') : null;
+
     return [
-      h('div', { class: 'page-head' }, h('h2', { class: 'page-title', text: p.name }), h('span', { class: 'pill ' + st.cls, id: `pill_${p.id}`, text: st.text })),
-      h('section', { class: 'set-group' }, h('h3', { text: 'Connection' }), ...fields,
-        h('div', { class: 'test-row' }, test, result)),
+      h('div', { class: 'page-head' }, h('h2', { class: 'page-title', text: p.default_name || p.name }), h('span', { class: 'pill ' + st.cls, id: `pill_${p.id}`, text: st.text })),
+      ...instances.map((inst) => renderInstanceSection(inst, instances.length)),
+      addBtn,
       h('p', { class: 'help foot', text: 'Changes are saved as you type. Choose the model from the menu at the top of the chat.' }),
     ];
   }

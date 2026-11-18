@@ -10,7 +10,7 @@
 
 <sub>*"A 90-degree pipe elbow with 30mm outer diameter, 3mm wall, swept over an 80mm radius, with an 80mm round mounting flange with 6 bolt holes on a 60mm bolt circle."*</sub>
 
-VibeShaper is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (such as Google Gemini).
+VibeShaper is an open-source Autodesk Fusion 360 add-in that converts natural language prompts into native, fully-constrained, and fully-parametric 3D CAD history using local LLMs (via Ollama) or cloud providers (Google Gemini, OpenAI, Anthropic Claude, or any OpenAI-compatible API).
 
 *VibeShaper was called PromptCAD up to version 0.2.0.*
 
@@ -26,7 +26,7 @@ Unlike mesh-based generative 3D tools that produce uneditable STL/OBJ blobs, Vib
 * **Chats Saved in Your Design**: Conversations are stored inside the Fusion document, so you can reopen a file later and keep refining it.
 * **Real Parametric B-Rep History**: Builds native Fusion 360 features organized in clean timeline groups.
 * **Fully Constrained Sketches**: Sketches evaluate to fully constrained (black curves, padlock icon in browser tree) with automated geometric constraints and driving dimensions.
-* **Pluggable Provider Architecture**: Zero vendor lock-in. Switch seamlessly between local Ollama (Qwen 3.6, DeepSeek, Llama) and Cloud AI (Google Gemini, etc.). Adding a new provider is as simple as dropping a Python file into `providers/`.
+* **Pluggable Provider Architecture**: Zero vendor lock-in. Switch seamlessly between local Ollama (Qwen 3.6, DeepSeek, Llama) and Cloud AI (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, DeepSeek, Groq). Adding a new provider is as simple as dropping a Python file into `providers/`.
 * **Self-Healing Solver Loop**: If Fusion's CAD kernel encounters an error (e.g., self-intersecting sweep or invalid face selection), Fusion automatically rolls back the transaction, sends the exact traceback to the model, and retries.
 * **Real-Time Streaming & Thought Inspection**: Watch the model's reasoning live in the panel, and stop at any time with **⏹** or **Esc**.
 * **Open & Declarative JSON DSL**: Uses an inspectable, human-readable CAD timeline DSL documented in [`DSL_SPEC.md`](DSL_SPEC.md).
@@ -117,6 +117,14 @@ VibeShaper keeps your settings (including API keys) and its logs in your user fo
 2. In VibeShaper:
    - Open **Settings → Google Gemini** and paste your **Gemini API key** (or export `GEMINI_API_KEY` in your system environment).
    - Pick a model from the model menu (e.g. `gemini-2.5-flash`).
+
+### Using OpenAI (or OpenAI-Compatible APIs)
+1. Open **Settings → OpenAI** and paste your **API key** (or export `OPENAI_API_KEY`), and optionally set a custom **Base URL** (e.g. OpenRouter, DeepSeek, Groq, LM Studio, vLLM) and **Name**.
+2. Click **Add provider** on the OpenAI settings page to connect multiple OpenAI-compatible endpoints simultaneously — each appears as its own collapsible group in the model menu.
+
+### Using Anthropic Claude
+1. Obtain an API key from the [Anthropic Console](https://console.anthropic.com).
+2. Open **Settings → Anthropic Claude** and paste your **Anthropic API key** (or export `ANTHROPIC_API_KEY`).
 
 ---
 

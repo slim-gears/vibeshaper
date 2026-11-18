@@ -141,7 +141,7 @@ def _load_settings():
         # keep entries of providers that aren't installed right now, untouched
         s['providers'][pid] = _provider_entry(prov, entry) if prov else entry
     sel = (saved.get('selection') or {}).get('provider')
-    if providers.get_provider(sel) if sel else False:
+    if (sel in s['providers'] and providers.get_provider(sel)) if sel else False:
         s['selection']['provider'] = sel
     return s
 
@@ -292,20 +292,37 @@ def _toast(text):
     _emit({'type': 'toast', 'text': text})
 
 
+def _instance_ids(s, prov):
+    """All saved instance ids for a provider: its primary id first, then any 'id:N' extras in order."""
+    ids = [prov.id]
+    if getattr(prov, 'multiple', False):
+        prefix = prov.id + ':'
+        extras = [k for k in s['providers'] if k.startswith(prefix)]
+        extras.sort(key=lambda k: (0, int(k[len(prefix):])) if k[len(prefix):].isdigit() else (1, k))
+        ids.extend(extras)
+    return ids
+
+
 def _providers_view():
     s = _load_settings()
     out = []
     for p in providers.get_all_providers():
-        entry = s['providers'].get(p.id) or _provider_entry(p)
-        out.append({
-            'id': p.id, 'name': p.name, 'short_name': p.short_name,
-            'schema': [f.to_view() for f in p.get_settings_schema()],
-            'values': entry['values'],
-            'model': entry['model'],
-            'model_options': entry['model_options'],
-            'models': _models_cache.get(p.id, []),
-            'configured': bool(p.is_configured(entry['values'])),
-        })
+        schema = [f.to_view() for f in p.get_settings_schema()]
+        for idx, pid in enumerate(_instance_ids(s, p)):
+            entry = s['providers'].get(pid) or _provider_entry(p)
+            name, short_name = p.instance_names(entry['values'], idx)
+            out.append({
+                'id': pid, 'parent_id': p.id if idx > 0 else None,
+                'default_name': p.name if idx == 0 else f'{p.name} {idx + 1}',
+                'multiple': bool(getattr(p, 'multiple', False)) if idx == 0 else False,
+                'name': name, 'short_name': short_name,
+                'schema': schema,
+                'values': entry['values'],
+                'model': entry['model'],
+                'model_options': entry['model_options'],
+                'models': _models_cache.get(pid, []),
+                'configured': bool(p.is_configured(entry['values'])),
+            })
     return out, s['selection']['provider']
 
 
@@ -1107,16 +1124,19 @@ def _act_delete_chat(data):
 
 
 def _provider_and_entry(prov_id):
-    prov = providers.get_provider(prov_id) if prov_id else None
+    pid = str(prov_id or '').strip().lower()
+    prov = providers.get_provider(pid) if pid else None
     if not prov:
-        return None, None, None
+        return None, None, None, None
     s = _load_settings()
-    return prov, s, s['providers'].setdefault(prov.id, _provider_entry(prov))
+    if ':' in pid and pid not in s['providers']:
+        return None, None, None, None
+    return pid, prov, s, s['providers'].setdefault(pid, _provider_entry(prov))
 
 
 def _act_get_models(data):
     """List a provider's models: with the values typed on its Settings page (Test connection) or the saved ones."""
-    prov, _s, entry = _provider_and_entry(data.get('provider'))
+    pid, prov, _s, entry = _provider_and_entry(data.get('provider'))
     if not prov:
         return
     values = providers.clean_values(prov.get_settings_schema(), data['values']) if isinstance(data.get('values'), dict) \
@@ -1127,11 +1147,11 @@ def _act_get_models(data):
         try:
             models = [m.to_view() for m in prov.list_models(values, timeout=5)]
             ids = [m['id'] for m in models]
-            payload = {'provider': prov.id, 'models': models, 'selected': current or (ids[0] if ids else '')}
+            payload = {'provider': pid, 'models': models, 'selected': current or (ids[0] if ids else '')}
             if not models:
                 payload['error'] = 'No models found. Check the connection settings.'
         except Exception as e:
-            payload = {'provider': prov.id, 'models': [], 'error': str(e)}
+            payload = {'provider': pid, 'models': [], 'error': str(e)}
         _app().fireCustomEvent(MODELS_EVENT_ID, json.dumps(payload))
 
     threading.Thread(target=work, daemon=True).start()
@@ -1139,29 +1159,72 @@ def _act_get_models(data):
 
 def _act_select_model(data):
     """Model menu in the main view: choose provider + model."""
-    prov, s, entry = _provider_and_entry(data.get('provider'))
+    pid, prov, s, entry = _provider_and_entry(data.get('provider'))
     model = str(data.get('model') or '')
     if not prov or not model:
         return
-    s['selection']['provider'] = prov.id
+    s['selection']['provider'] = pid
     entry['model'] = model
     _save_settings(s)
 
 
 def _act_save_provider(data):
     """Settings page: the provider's own values. Never the model or the selection."""
-    prov, s, entry = _provider_and_entry(data.get('provider'))
+    pid, prov, s, entry = _provider_and_entry(data.get('provider'))
     if not prov:
         return
     incoming = data.get('values') if isinstance(data.get('values'), dict) else {}
     entry['values'] = providers.clean_values(prov.get_settings_schema(), {**entry['values'], **incoming})
     _save_settings(s)
-    _emit({'type': 'provider_status', 'provider': prov.id, 'configured': bool(prov.is_configured(entry['values']))})
+    ev = {'type': 'provider_status', 'provider': pid, 'configured': bool(prov.is_configured(entry['values']))}
+    if getattr(prov, 'multiple', False):
+        ids = _instance_ids(s, prov)
+        idx = ids.index(pid) if pid in ids else 0
+        ev['name'], ev['short_name'] = prov.instance_names(entry['values'], idx)
+    _emit(ev)
+
+
+def _emit_providers():
+    pro, sel = _providers_view()
+    _emit({'type': 'providers', 'providers': pro, 'active_provider': sel})
+
+
+def _act_add_provider(data):
+    """Settings page: add another connection instance for a provider that supports multiple."""
+    base_id = str(data.get('provider') or '').strip().lower()
+    prov = providers.get_provider(base_id) if base_id and ':' not in base_id else None
+    if not prov or not getattr(prov, 'multiple', False):
+        return
+    s = _load_settings()
+    prefix = prov.id + ':'
+    used = {int(k[len(prefix):]) for k in s['providers'] if k.startswith(prefix) and k[len(prefix):].isdigit()}
+    n = 2
+    while n in used:
+        n += 1
+    s['providers'][f'{prov.id}:{n}'] = _provider_entry(prov)
+    _save_settings(s)
+    _emit_providers()
+
+
+def _act_remove_provider(data):
+    """Settings page: remove an added provider connection instance."""
+    pid = str(data.get('provider') or '').strip().lower()
+    if ':' not in pid:
+        return
+    s = _load_settings()
+    if pid not in s['providers']:
+        return
+    del s['providers'][pid]
+    _models_cache.pop(pid, None)
+    if s['selection'].get('provider') == pid:
+        s['selection']['provider'] = pid.split(':', 1)[0]
+    _save_settings(s)
+    _emit_providers()
 
 
 def _act_set_model_option(data):
     """Per-model choices VibeShaper keeps (think on/off)."""
-    prov, s, entry = _provider_and_entry(data.get('provider'))
+    _pid, prov, s, entry = _provider_and_entry(data.get('provider'))
     model = str(data.get('model') or '')
     if not prov or not model:
         return
@@ -1241,7 +1304,8 @@ ACTIONS = {
     'validate_json': _act_validate_json, 'new_chat': _act_new_chat, 'switch_chat': _act_switch_chat,
     'delete_chat': _act_delete_chat,
     'get_models': _act_get_models, 'select_model': _act_select_model,
-    'save_provider': _act_save_provider, 'set_model_option': _act_set_model_option,
+    'save_provider': _act_save_provider, 'add_provider': _act_add_provider, 'remove_provider': _act_remove_provider,
+    'set_model_option': _act_set_model_option,
     'save_general': _act_save_general, 'copy': _act_copy,
     'open_bom': _act_open_bom, 'bom_ready': _act_bom_ready, 'export_bom': _act_export_bom,
 }
